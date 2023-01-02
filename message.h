@@ -13,6 +13,8 @@
 #define MAX_LENGTH_KEY 128
 #define MAX_LENGTH_VAL 1024
 
+const size_t slots = 3;
+
 /**
  * A struct representing a single message which can be written by
  * a client and read by the server.
@@ -33,7 +35,7 @@ typedef struct Message {
         DELETE,
         RESPONSE
     } mode;
-    std::atomic<bool> read;
+    //std::atomic<bool> read;
     //size_t key_length;
     //size_t data_length;
     //uint8_t key[MAX_LENGTH_KEY];
@@ -46,23 +48,23 @@ typedef struct Message {
     Message() : mode(Message::DEFAULT),
                 key({}),
                 data({}) {
-        std::atomic_init(&read, false);
+        //std::atomic_init(&read, false);
     }
 
     constexpr Message(Message& other) : mode(other.mode),
-                                        read(other.read.load()),
+                                        //read(other.read.load()),
                                         key(other.key),
                                         data(other.data) { }
 
     constexpr Message(Message&& other) : mode(std::move(other.mode)),
-                                         read(other.read.load(std::memory_order_seq_cst)),
+                                         //read(other.read.load(std::memory_order_seq_cst)),
                                          key(std::move(other.key)),
                                          data(std::move(other.data)) { }
 
     constexpr Message& operator=(const Message& other) {
         mode = other.mode;
         //read = other.read.load(std::memory_order_acquire);
-        read = other.read.load(std::memory_order_seq_cst);
+        //read = other.read.load(std::memory_order_seq_cst);
         //key  = other.key;
         //data = other.data;
         std::copy(other.key.begin(), other.key.end(), key.begin());
@@ -71,7 +73,7 @@ typedef struct Message {
     }
     constexpr Message& operator=(Message&& other) {
         mode = std::move(other.mode);
-        read = other.read.load(std::memory_order_seq_cst);
+        //read = other.read.load(std::memory_order_seq_cst);
         key  = std::move(other.key);
         data = std::move(other.data);
         return *this;
@@ -111,15 +113,15 @@ typedef struct Mailbox {
 
     Mailbox(size_t slots) : msgs(CircularBuffer<Message>{slots}) {};
 
-    Mailbox& operator=(const Mailbox& other) {
-        msgs = other.msgs;
-        return *this;
-    }
+    //Mailbox& operator=(const Mailbox& other) {
+    //    msgs = other.msgs;
+    //    return *this;
+    //}
 
-    Mailbox& operator=(Mailbox&& other) {
-        msgs = std::move(other.msgs);
-        return *this;
-    }
+    //Mailbox& operator=(Mailbox&& other) {
+    //    msgs = std::move(other.msgs);
+    //    return *this;
+    //}
 
     //CircularBuffer<Message> msgs{64};
     CircularBuffer<Message> msgs;
@@ -127,16 +129,16 @@ typedef struct Mailbox {
 
 typedef struct MMap {
     MMap(size_t msg_slots) : mailbox(Mailbox(msg_slots)) {};
-    MMap& operator=(const MMap& other) {
-        mailbox = other.mailbox;
+    //MMap& operator=(const MMap& other) {
+    //    mailbox = other.mailbox;
 
-        return *this;
-    }
-    MMap& operator=(MMap&& other) {
-        mailbox = std::move(other.mailbox);
+    //    return *this;
+    //}
+    //MMap& operator=(MMap&& other) {
+    //    mailbox = std::move(other.mailbox);
 
-        return *this;
-    }
+    //    return *this;
+    //}
 
     Mailbox mailbox;
     //uint8_t memory[1024];

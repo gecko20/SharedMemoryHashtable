@@ -67,19 +67,20 @@ Message sendMsg(Mailbox* mailbox, const enum Message::mode_t mode, const char* k
             break;
     }
     // Send the message
-    // TODO: Lock, check for return value of -1
+    // TODO: Check for return value of -1
     auto idx = static_cast<size_t>(mailbox->msgs.push_back(std::move(msg)));
 
     // Wait for a response
     Message ret{};
+    return ret;
     while(mailbox->msgs[idx].mode != Message::RESPONSE) {
         std::cout << "Waiting..." << std::endl;
     }
     ret = mailbox->msgs[idx];
     //mailbox->msgs[idx].read.store(true);
     //mailbox->msgs[idx].read.notify_all();
-    mailbox->msgs.getPtr(idx)->read.store(true);
-    mailbox->msgs.getPtr(idx)->read.notify_all();
+    //mailbox->msgs.getPtr(idx)->read.store(true);
+    //mailbox->msgs.getPtr(idx)->read.notify_all();
 
     return ret;
 }
@@ -97,7 +98,7 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
     
-    const size_t slots = 10; //64; // Number of message slots
+    //const size_t slots = 10; //64; // Number of message slots, defined in message.h
     const size_t page_size = static_cast<size_t>(getpagesize());
     const size_t mmap_size = sizeof(MMap) + sizeof(Message) * slots; // TODO: Check if + sizeof(Mailbox) is missing
     const size_t num_pages = (mmap_size / page_size) + 1; // + 1 page just to make sure we have enough memory
@@ -112,7 +113,7 @@ int main(int argc, char** argv) {
     void* shared_mem_ptr = mmap(NULL,
             sizeof(MMap) + sizeof(Message) * slots,
             PROT_READ | PROT_WRITE,
-            MAP_SHARED, //| MAP_HASSEMAPHORE,
+            MAP_SHARED | MAP_HASSEMAPHORE,
             shm_fd,
             0);
     if(shared_mem_ptr == MAP_FAILED) {

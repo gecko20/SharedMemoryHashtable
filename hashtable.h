@@ -6,7 +6,9 @@
 #include <concepts>
 #include <functional>
 #include <list>
+#include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map> // For hashes
 #include <vector>
@@ -117,6 +119,8 @@ class HashTable {
             if(get(key))
                 return false;
 
+            std::unique_lock lock(_mutex);
+
             size_t hash_val = hash(key);
             auto& bucket = _storage[hash_val];
 
@@ -136,6 +140,9 @@ class HashTable {
          */
         std::optional<V> get(const K& key) const {
             size_t hash_val = hash(key);
+
+            std::shared_lock lock(_mutex);
+
             auto& bucket = _storage[hash_val];
 
             auto result = std::find_if(bucket.l.begin(), bucket.l.end(),
@@ -157,6 +164,9 @@ class HashTable {
          */
         std::optional<V> remove(const K& key) {
             size_t hash_val = hash(key);
+
+            std::unique_lock lock(_mutex);
+
             auto& bucket = _storage[hash_val];
 
             auto const result = std::find_if(bucket.l.begin(), bucket.l.end(),
@@ -186,6 +196,8 @@ class HashTable {
             //std::cout << _size << std::endl;
             //std::cout << _capacity << std::endl;
 
+            std::shared_lock lock(_mutex);
+
             for(size_t i = 0; i < _capacity; ++i) {
                 //std::cout << "Bucket " << i << " size: " << _storage[i].l.size() << std::endl;
                 if(!_storage[i].l.empty()) {
@@ -203,6 +215,8 @@ class HashTable {
         std::vector<V> getValues() const {
             std::vector<V> vec = std::vector<V>();
 
+            std::shared_lock lock(_mutex);
+
             for(size_t i = 0; i < _capacity; ++i) {
                 if(!_storage[i].l.empty()) {
                     for(auto& elem : _storage[i].l) {
@@ -217,6 +231,7 @@ class HashTable {
          * Returns the current size/number of elements of the HashTable.
          */
         size_t size() const {
+            //std::shared_lock lock(_mutex);
             return _size;
         }
 
@@ -224,6 +239,7 @@ class HashTable {
          * Returns the current capacity of the HashTable.
          */
         size_t capacity() const {
+            //std::shared_lock lock(_mutex);
             return _capacity;
         }
 
@@ -233,6 +249,7 @@ class HashTable {
          * in the HashTable, k being the number of buckets.
          */
         double load_factor() const {
+            //std::shared_lock lock(_mutex);
             if(_capacity == 0) return 0.0;
 
             return static_cast<double>(_size) / static_cast<double>(_capacity);
@@ -246,6 +263,7 @@ class HashTable {
          * in combination with an assignment.
          */
         Proxy operator[](const K key) {
+            std::unique_lock lock(_mutex);
             size_t hash_val = hash(key);
             auto& bucket = _storage[hash_val];
 
@@ -273,6 +291,7 @@ class HashTable {
         //    return Proxy(*this, &((*result).second));
         //}
         V& operator[](const K key) const {
+            std::shared_lock lock(_mutex);
             size_t hash_val = hash(key);
             auto& bucket = _storage[hash_val];
 
@@ -347,6 +366,8 @@ class HashTable {
         //std::list<V>** _storage;
         std::unique_ptr<Node[]> _storage;
         //std::unordered_map<std::string, int> _storage;
+        mutable std::shared_mutex _mutex;
+        mutable std::mutex _gmutex;
 
         size_t hash(const K key) const {
             std::hash<K> hash_fn;
@@ -391,6 +412,7 @@ class HashTable {
 
         void resize(bool shrink=false) {
             // TODO: Lock all buckets
+            std::lock_guard<std::mutex> lock(_gmutex);
 
             auto lf = load_factor();
 
@@ -405,12 +427,16 @@ class HashTable {
                 _storage = std::make_unique<Node[]>(_capacity * GROWTH_FACTOR);
                 _capacity = _capacity * GROWTH_FACTOR;
                 _size = 0;
+
+                //_mutex.unlock();
                 for(size_t i = 0; i < _capacity; ++i) {
                     _storage[i] = Node();
                 }
                 for(auto& elem : old_elems) {
-                    insert(elem.first, std::move(elem.second)); 
+                    //insert(elem.first, std::move(elem.second)); 
+                    insert_unsafe(elem.first, std::move(elem.second));
                 }
+                //_mutex.lock();
 
             } else if(shrink && lf <= 0.25) { //(ALPHA_MAX/4)) {
                 // Shrink the HashTable
@@ -426,12 +452,23 @@ class HashTable {
                     _storage[i] = Node();
                 }
                 for(auto& elem : old_elems) {
-                    insert(elem.first, std::move(elem.second)); 
+                    //insert(elem.first, std::move(elem.second)); 
+                    insert_unsafe(elem.first, std::move(elem.second));
                 }
 
             }
 
             // TODO: Unlock all buckets
+        }
+
+        // Used when resizing
+        void insert_unsafe(K key, V value) {
+            size_t hash_val = hash(key);
+            auto& bucket = _storage[hash_val];
+
+            bucket.l.push_back(std::make_pair(key, value));
+
+            ++_size;
         }
 
 };
