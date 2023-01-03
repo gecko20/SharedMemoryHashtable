@@ -30,6 +30,7 @@ concept Hashable = requires(T a) {
 /**
  * A hashtable storing key-value pairs supporting concurrent operations.
  * Hash collisions are resolved by chaining via linked lists for each bucket in the table.
+ * Synchronization of concurrt operations is done via reader/writer locks, i.e. std::shared_mutex.
  */ 
 template <typename K, typename V> requires Hashable<K> && std::equality_comparable<K> && std::copy_constructible<V>
 class HashTable {
@@ -48,22 +49,14 @@ class HashTable {
 
             // Assignment via subscript in class HashTable
             void operator=(V rhs) {
-                // TODO Somehow lock bucket?
-
-                //++table._size;
                 auto entry = table.get(*key);
                 if(entry) {
-                    // TODO: Test this thoroughly... perhaps values should be stored "by reference", not "by value"
                     *element = rhs;
-                    //table.remove(*key);
-                    //table.insert(*key, rhs);
-
                 } else {
-                    //table.insert(*key, *element);
                     table.insert(*key, rhs);
                 }
 
-                // TODO: Make static?
+                // TODO: Static size?
                 //resize();
             }
 
@@ -152,7 +145,6 @@ class HashTable {
                 return std::make_optional((*result).second);
             } else {
                 return std::nullopt;
-                //return std::optional<V>{};
             }
         }
 
@@ -182,8 +174,6 @@ class HashTable {
             } else {
                 //std::cout << "did not find key " << key << std::endl;
                 return std::nullopt;
-                //std::cout << "remove: does not contain " << key << ", result is " << (*result).first << std::endl;
-                //return std::optional<V>{};
             }
             return std::make_optional((*result).second);
         }
@@ -193,8 +183,6 @@ class HashTable {
          */
         std::vector<K> getKeys() const {
             std::vector<K> vec = std::vector<K>();
-            //std::cout << _size << std::endl;
-            //std::cout << _capacity << std::endl;
 
             std::shared_lock lock(_mutex);
 
@@ -272,24 +260,7 @@ class HashTable {
 
             return Proxy(*this, &key, &((*result).second));
         }
-        //V operator[](const K key) {
-        //    size_t hash_val = hash(key);
-        //    auto& bucket = _storage[hash_val];
 
-        //    auto const result = std::find_if(bucket.l.begin(), bucket.l.end(),
-        //            [&key](const std::pair<K, V>& elem) { return elem.first == key; } );
-
-        //    return V(Proxy(*this, &((*result).second)));
-        //}
-        //Proxy operator[](const K key) const {
-        //    size_t hash_val = hash(key);
-        //    auto& bucket = _storage[hash_val];
-
-        //    auto const result = std::find_if(bucket.l.begin(), bucket.l.end(),
-        //            [key](const std::pair<K, V>& elem) { return elem.first == key; } );
-
-        //    return Proxy(*this, &((*result).second));
-        //}
         V& operator[](const K key) const {
             std::shared_lock lock(_mutex);
             size_t hash_val = hash(key);
@@ -301,36 +272,6 @@ class HashTable {
             return V(Proxy(*this, &key, &((*result).second)));
         }
         
-        /**
-         * Returns a reference to the value the provided key is mapped to.
-         */ 
-        //V& operator[](const K key) const {
-        //    std::cout << "operator[] const called" << std::endl;
-        //    size_t hash_val = hash(key);
-        //    auto& bucket = _storage[hash_val];
-
-        //    //auto& result = std::find(std::begin(bucket), std::end(bucket), key);
-        //    auto const result = std::find_if(bucket.l.begin(), bucket.l.end(),
-        //            [key](const std::pair<K, V>& elem) { return elem.first == key; } );
-
-        //    return &((*result).second);
-        //}
-
-        //// Inserts / overwrites the entry at the given key
-        //V& operator[](const K key) {
-        //    std::cout << "operator[] called" << std::endl;
-        //    size_t hash_val = hash(key);
-        //    auto& bucket = _storage[hash_val];
-
-        //    //auto& result = std::find(std::begin(bucket), std::end(bucket), key);
-        //    auto result = std::find_if(bucket.l.begin(), bucket.l.end(),
-        //            [key](const std::pair<K, V>& elem) { return elem.first == key; } );
-
-        //    if(result == bucket.l.end()) {
-        //        ++_size;
-        //    }
-        //    return (*result).second;
-        //}
 
         void print_table() const {
             // TODO
@@ -357,15 +298,11 @@ class HashTable {
 
             std::list<std::pair<K, V>> l = std::list<std::pair<K, V>>();
         };
-        //using Node = std::list<std::pair<K, V>>;
         
         size_t _size;
         size_t _capacity;
         const bool _resizable;
-        //std::array<std::list<T>, _size> _storage;
-        //std::list<V>** _storage;
         std::unique_ptr<Node[]> _storage;
-        //std::unordered_map<std::string, int> _storage;
         mutable std::shared_mutex _mutex;
         mutable std::mutex _gmutex;
 
@@ -376,25 +313,6 @@ class HashTable {
             return hash_val;
         }
 
-        
-        /**
-         * Searches for an element with the given key and returns a pair consisting
-         * of a reference to the bucket and an iterator to the element.
-         * TODO
-         */
-        //std::pair<Node&, std::iterator> find(const K& key) {
-        //std::pair<Node&, std::iterator<std::input_iterator_tag, std::pair<K, V>>> find(const K& key) {
-        //std::pair<Node&, typename std::list<std::pair<K, V>>::iterator> find(const K& key) {
-        //std::pair<Node&, std::__list_iterator<std::pair<K, V>, void*>> find(const K& key) {
-        //    size_t hash_val = hash(key);
-        //    auto& bucket = _storage[hash_val];
-
-        //    auto result = std::find_if(bucket.l.begin(), bucket.l.end(),
-        //            [key](const std::pair<K, V>& elem) { return elem.first == key; } );
-
-        //    return std::make_pair(bucket, result);
-        //}
-
         // Collects all (key, value) pairs into one list, emptying all buckets
         std::list<std::pair<K, V>> collectPairs() {
             std::list<std::pair<K, V>> l = std::list<std::pair<K, V>>();
@@ -403,15 +321,10 @@ class HashTable {
                     l.splice(l.begin(), _storage[i].l);
             }
 
-            //for(auto& elem : l) {
-            //    std::cout << elem.first << " : " << elem.second << std::endl;
-            //}
-
             return l;
         }
 
         void resize(bool shrink=false) {
-            // TODO: Lock all buckets
             std::lock_guard<std::mutex> lock(_gmutex);
 
             auto lf = load_factor();
@@ -428,7 +341,6 @@ class HashTable {
                 _capacity = _capacity * GROWTH_FACTOR;
                 _size = 0;
 
-                //_mutex.unlock();
                 for(size_t i = 0; i < _capacity; ++i) {
                     _storage[i] = Node();
                 }
@@ -436,7 +348,6 @@ class HashTable {
                     //insert(elem.first, std::move(elem.second)); 
                     insert_unsafe(elem.first, std::move(elem.second));
                 }
-                //_mutex.lock();
 
             } else if(shrink && lf <= 0.25) { //(ALPHA_MAX/4)) {
                 // Shrink the HashTable
@@ -457,8 +368,6 @@ class HashTable {
                 }
 
             }
-
-            // TODO: Unlock all buckets
         }
 
         // Used when resizing
@@ -470,5 +379,4 @@ class HashTable {
 
             ++_size;
         }
-
 };

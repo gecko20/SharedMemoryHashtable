@@ -19,17 +19,14 @@
 #include <thread>
 #include "server.h"
 #include "hashtable.h"
+#include "mutex.h"
 
-// hex start
-// from https://gist.github.com/miguelmota/4fc9b46cf21111af5fa613555c14de92
 #include <sstream>
 #include <iomanip>
 
 using namespace std::chrono_literals;
 
 volatile bool running = true;
-std::atomic<bool> thread_running{true};
-//std::condition_variable stop_threads;
 std::mutex cout_lock;
 void signal_handler([[maybe_unused]] int signal) {
     running = false;
@@ -38,12 +35,13 @@ void signal_handler([[maybe_unused]] int signal) {
 // Our HashTable which is managed by the server
 std::unique_ptr<HashTable<std::string, std::string>> table;
 
+// from https://gist.github.com/miguelmota/4fc9b46cf21111af5fa613555c14de92
 std::string uint8_to_hex_string(const uint8_t* v, const size_t s) {
     std::stringstream ss;
 
     ss << std::hex << std::setfill('0');
 
-    for(int i = 0; i < s; ++i) {
+    for(size_t i = 0; i < s; ++i) {
         if(static_cast<int>(v[i]) == 0)
             break;
         ss << std::hex << std::setw(2) << static_cast<int>(v[i]);
@@ -51,11 +49,9 @@ std::string uint8_to_hex_string(const uint8_t* v, const size_t s) {
     return ss.str();
 }
 
-// hex end
-
 std::string uint8_to_string(const uint8_t* v, const size_t len) {
     std::stringstream ss;
-    for(int i = 0; i < len; ++i) {
+    for(size_t i = 0; i < len; ++i) {
         if(static_cast<int>(v[i]) == 0)
             break;
         ss << v[i];
@@ -66,6 +62,7 @@ std::string uint8_to_string(const uint8_t* v, const size_t len) {
 std::ostream& operator<<(std::ostream& output, const Message& other) {
     output << "Message ";
     switch(other.mode) {
+    //switch(other.mode.load()) {
         case Message::GET:
             output << "(GET)";
             break;
@@ -86,11 +83,6 @@ std::ostream& operator<<(std::ostream& output, const Message& other) {
             break;
     }
 
-    //output << " KeyLength: " << other.key_length << " Key (Hex): ";
-    //output << uint8_to_hex_string(other.key, other.key_length);
-    //output << " DataLength: " << other.data_length << " Data (Hex): ";
-    //output << uint8_to_hex_string(other.data, other.data_length);
-    //output << std::endl;
     output << " KeyLength: " << other.key.size() << " Key (Hex): ";
     output << uint8_to_hex_string(other.key.data(), other.key.size());
     output << " DataLength: " << other.data.size() << " Data (Hex): ";
@@ -101,9 +93,9 @@ std::ostream& operator<<(std::ostream& output, const Message& other) {
     return output;
 }
 
-//using namespace std::chrono_literals;
 void receiveMsg(Mailbox* mailbox) {
-    while(thread_running.load(std::memory_order_relaxed)) {
+    //while(thread_running.load(std::memory_order_relaxed)) {
+    while(true) {
         // Peek whether the current slot still has to be read by a client
         // This is necessary because of the case of a wrap-around in the
         // CircularBuffer which could lead to the response being overwritten.
@@ -125,28 +117,29 @@ void receiveMsg(Mailbox* mailbox) {
             auto& msg = elem->first;
             auto idx = elem->second;
             // Set the Message's slot's mode to RESPONSE as to prevent the server
-            // to overwrite it prematurely TODO
-            mailbox->msgs.at(idx).mode = Message::RESPONSE;
+            // overwriting it prematurely TODO
+            //mailbox->msgs.at(idx).mode = Message::RESPONSE;
 
-            respond(mailbox, idx, msg);
+            // Check for exit condition
+            if(msg.mode == Message::EXIT)
+            //if(msg.mode.load() == Message::EXIT)
+                break;
+
+            respond(mailbox, static_cast<int>(idx), msg);
 
             {
                 std::scoped_lock<std::mutex> lock(cout_lock);
                 std::cout << "thread " << std::this_thread::get_id() << " handling slot " << idx << std::endl;
             }
-            //std::this_thread::sleep_for(1000ms);
         }
     }
 }
 
 void respond(Mailbox* mailbox, int idx, Message msg) {
-    //std::cout << "Hello from the worker handling " << idx << ": " << msg.mode << "!" << std::endl;
     // TODO Check for malformed requests
     Message response{};
     response.mode = Message::RESPONSE;
-    //response.key_length = msg.key_length;
-    //response.key = msg.key;
-    //memcpy(response.key, msg.key, response.key_length);
+    //response.mode.store(Message::RESPONSE);
     response.key = msg.key;
 
     switch(msg.mode) {
@@ -154,8 +147,11 @@ void respond(Mailbox* mailbox, int idx, Message msg) {
             auto result = table->get(uint8_to_string(msg.key.data(), msg.key.size()));
             if(result) {
                 auto& value = *result;
+                //response.success = true;
+                response.success.store(true);
                 //response.data_length = value.length(); //+ 1;
-                memcpy(response.data.data(), value.c_str(), value.length());
+                //memcpy(response.data.data(), value.c_str(), value.length());
+                memcpy(response.data.data(), value.c_str(), strlen(value.c_str()));
 
                 {
                     std::scoped_lock<std::mutex> lock(cout_lock);
@@ -164,6 +160,8 @@ void respond(Mailbox* mailbox, int idx, Message msg) {
             } else {
                 // Entry was not found in the HashTable
                 //response.data_length = 0;
+                //response.success = false;
+                response.success.store(false);
                 {
                     std::scoped_lock<std::mutex> lock(cout_lock);
                     std::cout << "GET: did not find key " << uint8_to_string(response.key.data(), response.key.size()) << " in the HT!" << std::endl;
@@ -173,22 +171,31 @@ void respond(Mailbox* mailbox, int idx, Message msg) {
             }
         case Message::INSERT: {
             bool result = table->insert(uint8_to_string(msg.key.data(), msg.key.size()), uint8_to_string(msg.data.data(), msg.data.size()));
-            memcpy(response.data.data(), &result, sizeof(bool));
-            {
-                std::scoped_lock<std::mutex> lock(cout_lock);
-                //std::cout << "INSERT: returned from HashTable: " << uint8_to_string(response.data.data(), response.data.size()) << std::endl;
-                //std::cout << "INSERT: returned from HashTable: " << response.data.data() << std::endl;
+            if(result) {
+                //response.success = true;
+                response.success.store(true);
+                memcpy(response.data.data(), &result, sizeof(bool));
+            } else {
+                //response.success = false;
+                response.success.store(false);
+                {
+                    std::scoped_lock<std::mutex> lock(cout_lock);
+                    //std::cout << "INSERT: returned from HashTable: " << uint8_to_string(response.data.data(), response.data.size()) << std::endl;
+                    //std::cout << "INSERT: returned from HashTable: " << response.data.data() << std::endl;
+                }
             }
             break;
             }
         case Message::READ_BUCKET:
+            // TODO
             break;
         case Message::DELETE: {
             auto result = table->remove(uint8_to_string(msg.key.data(), msg.key.size()));
             if(result) {
                 auto& value = *result;
-                //response.data_length = value.length(); //+ 1;
-                memcpy(response.data.data(), value.c_str(), value.length());
+                //response.success = true;
+                response.success.store(true);
+                memcpy(response.data.data(), value.c_str(), strlen(value.c_str()));
 
                 {
                     std::scoped_lock<std::mutex> lock(cout_lock);
@@ -196,7 +203,8 @@ void respond(Mailbox* mailbox, int idx, Message msg) {
                 }
             } else {
                 // Entry was not found in the HashTable
-                //response.data_length = 0;
+                //response.success = false;
+                response.success.store(false);
                 {
                     std::scoped_lock<std::mutex> lock(cout_lock);
                     std::cout << "DELETE: did not find key " << uint8_to_string(response.key.data(), response.key.size()) << " in the HT!" << std::endl;
@@ -205,14 +213,16 @@ void respond(Mailbox* mailbox, int idx, Message msg) {
             }
             break;
         case Message::RESPONSE:
+            // TODO: Check if RESPONSE has been read, then overwrite/delete this message
+            return;
             break;
         default:
+            return;
             break;
     }
     // Write the response in the request's slot
-    // TODO Lock CircularBuffer?
     //mailbox->msgs[idx] = response;
-    mailbox->msgs[idx] = std::move(response);
+    mailbox->msgs[static_cast<size_t>(idx)] = std::move(response);
 }
 
 int main(int argc, char* argv[]) {
@@ -235,7 +245,6 @@ int main(int argc, char* argv[]) {
     }
 
     // Our HashTable which is managed by the server
-    //auto table = std::make_unique<HashTable<std::string, std::string>>(tableSize);
     table = std::make_unique<HashTable<std::string, std::string>>(tableSize);
 
     table->insert("test", "hallo");
@@ -253,9 +262,9 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    //const size_t slots = 3;//10; //64; // Number of message slots, defined in message.h
+    //const size_t slots = 3; // Number of message slots, defined in message.h
     const size_t page_size = static_cast<size_t>(getpagesize());
-    const size_t mmap_size = sizeof(MMap) + sizeof(Message) * slots; // TODO: Check if + sizeof(Mailbox) is missing
+    const size_t mmap_size = sizeof(MMap) + sizeof(Message) * slots;
     const size_t num_pages = (mmap_size / page_size) + 1; // + 1 page just to make sure we have enough memory
 
     // Truncate / Extend the shared memory object to the needed size in multiples of PAGE_SIZE
@@ -265,7 +274,6 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    //MMap* shared_mem = (MMap*)mmap(0, sizeof(MMap), PROT_READ, MAP_SHARED, shm_fd, 0);
     void* shared_mem_ptr = mmap(NULL,
             sizeof(MMap) + sizeof(Message) * slots,
             //num_pages * page_size,
@@ -281,30 +289,14 @@ int main(int argc, char* argv[]) {
 
     // Initialize and cast the shared memory pointer to struct MMap*
     //MMap* shared_mem = reinterpret_cast<MMap*>(shared_mem_ptr);
-    MMap* shared_mem = new(shared_mem_ptr) MMap{slots};
+    MMap* shared_mem = new(shared_mem_ptr) MMap{slots}; // Placement new
 
     // Initialize the shared memory / mailbox
-
-    //MMap tmp{slots};
-    //*shared_mem = std::move(MMap{slots});
-    //*shared_mem = std::move(tmp); // is std::move useful here?
-    //*shared_mem = tmp;
 
     std::cout << "Size of shared memory (in bytes): " << num_pages * page_size << std::endl;
     std::cout << "Size of mailbox (in bytes): " << sizeof(MMap) + sizeof(Message) * slots << std::endl;
 
-    //shared_mem->mailbox.msgs.push_back(3);
-
     Mailbox* mailbox_ptr = &(shared_mem->mailbox);
-
-    //const char test_data[] = "hallo";
-    //Message test_msg{};
-    //test_msg.mode = Message::RESPONSE;
-    //test_msg.key_length = strlen(test_data) + 1;
-    //memcpy(test_msg.key, test_data, test_msg.key_length);
-    //test_msg.data_length = test_msg.key_length;
-    //memcpy(test_msg.data, test_data, test_msg.data_length);
-    //mailbox_ptr->msgs.push_back(test_msg);
 
 
     std::signal(SIGINT, signal_handler);
@@ -317,18 +309,26 @@ int main(int argc, char* argv[]) {
         //t.detach();
     }
 
+    //std::cout << thread_running.is_lock_free() << std::endl;
+    //std::cout << std::atomic<bool>::is_always_lock_free << std::endl;
+
     // Main loop
     while(running) {
-        //receiveMsg(mailbox_ptr);
-        //std::cout << "returned from receiveMsg" << std::endl;
-        //sleep(5);
         std::this_thread::sleep_for(2s);
+        std::cout << "CircularBuffer:" << std::endl;
         mailbox_ptr->msgs.printBuffer();
+        std::cout << "---------------" << std::endl;
+        std::cout << "HashTable:" << std::endl;
         table->print_table();
+        std::cout << "---------------" << std::endl;
     }
 
     // Signal the threads to return
-    thread_running.store(false, std::memory_order_relaxed);
+    Message exit_msg{};
+    exit_msg.mode = Message::EXIT;
+    for(size_t i = 0; i < slots; ++i) {
+        mailbox_ptr->msgs.push_back(exit_msg); 
+    }
 
     // Wait for all threads to finish their jobs
     for(auto& t : threads) {

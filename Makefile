@@ -15,21 +15,25 @@ hashtable.o: hashtable.cpp hashtable.h
 	$(CC) $(CXX_FLAGS) -c hashtable.cpp -o $(BUILD)/$@ $(LD_FLAGS)
 	#$(CC) $(CXX_FLAGS) hashtable.cpp -o $(BUILD)/$@
 
-circular_buffer.o: circular_buffer.cpp circular_buffer.h
+mutex.o: mutex.cpp mutex.h
 	@mkdir -p $(BUILD)
-	$(CC) $(CXX_FLAGS) -c circular_buffer.cpp -o $(BUILD)/$@ $(LD_FLAGS)
+	$(CC) $(CXX_FLAGS) -c mutex.cpp -o $(BUILD)/$@ $(LD_FLAGS)
 
-server: hashtable.o circular_buffer.o message.h server.cpp server.h
+circular_buffer.o: circular_buffer.cpp circular_buffer.h mutex.o
 	@mkdir -p $(BUILD)
-	$(CC) $(CXX_FLAGS) server.cpp -o $(BUILD)/$@ $(BUILD)/hashtable.o $(BUILD)/circular_buffer.o $(LD_FLAGS)
+	$(CC) $(CXX_FLAGS) -c circular_buffer.cpp -o $(BUILD)/$@ $(BUILD)/mutex.o $(LD_FLAGS)
 
-client: circular_buffer.o message.h client.cpp client.h
+server: hashtable.o mutex.o circular_buffer.o message.h server.cpp server.h
 	@mkdir -p $(BUILD)
-	$(CC) $(CXX_FLAGS) client.cpp -o $(BUILD)/$@ $(BUILD)/circular_buffer.o $(LD_FLAGS)
+	$(CC) $(CXX_FLAGS) server.cpp -o $(BUILD)/$@ $(BUILD)/hashtable.o $(BUILD)/mutex.o $(BUILD)/circular_buffer.o $(LD_FLAGS)
 
-test: hashtable.o circular_buffer.o hashtable_tests.cpp doctest.h
+client: circular_buffer.o mutex.o message.h client.cpp client.h
+	@mkdir -p $(BUILD)
+	$(CC) $(CXX_FLAGS) client.cpp -o $(BUILD)/$@ $(BUILD)/mutex.o $(BUILD)/circular_buffer.o $(LD_FLAGS)
+
+test: hashtable.o mutex.o circular_buffer.o hashtable_tests.cpp doctest.h
 	@mkdir -p $(TEST)
-	$(CC) $(CXX_FLAGS) hashtable_tests.cpp -o $(TEST)/$@ $(BUILD)/hashtable.o $(LD_FLAGS)
+	$(CC) $(CXX_FLAGS) hashtable_tests.cpp -o $(TEST)/$@ $(BUILD)/mutex.o $(BUILD)/hashtable.o $(LD_FLAGS)
 	./$(TEST)/test
 
 run: server client

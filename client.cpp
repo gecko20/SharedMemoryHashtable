@@ -16,6 +16,9 @@
 #include "message.h"
 //#include "hashtable.h"
 
+#include <sstream>
+#include <iomanip>
+
 /**
  * An example client storing C-style strings in a HashTable managed by
  * the example server using C-style strings as keys.
@@ -26,41 +29,41 @@ void signal_handler([[maybe_unused]] int signal) {
     running = false;
 }
 
-Message sendMsg(Mailbox* mailbox, const enum Message::mode_t mode, const char* key, const char* value) {
-    //Message test_msg{Message::GET, strlen(test_data) + 1, {0}};
-    //// Poor memory
-    //memcpy(test_msg.data, test_data, strlen(test_data) + 1);
+std::string uint8_to_string(const uint8_t* v, const size_t len) {
+    std::stringstream ss;
+    for(size_t i = 0; i < len; ++i) {
+        if(static_cast<int>(v[i]) == 0)
+            break;
+        ss << v[i];
+    }
+    return ss.str();
+}
 
+Message sendMsg(Mailbox* mailbox, const enum Message::mode_t mode, const char* key, const char* value) {
     Message msg{};
 
     // Prepare the message
     switch(mode) {
         case Message::GET:
             msg.mode = Message::GET;
-            //msg.key_length = strlen(key); // + 1;
-            //memcpy(msg.key, key, msg.key_length);
             memcpy(msg.key.data(), key, strlen(key));
             break;
         case Message::INSERT:
             msg.mode = Message::INSERT;
-            //msg.key_length = strlen(key); // + 1;
-            //memcpy(msg.key, key, msg.key_length);
             memcpy(msg.key.data(), key, strlen(key));
-            //msg.data_length = strlen(value); // + 1;
-            //memcpy(msg.data, value, msg.data_length);
             memcpy(msg.data.data(), value, strlen(value));
             break;
         case Message::READ_BUCKET:
             msg.mode = Message::READ_BUCKET;
             // Key is interpreted as the bucket's index in this case
-            //msg.key_length = strlen(key); // + 1;
             memcpy(msg.key.data(), key, strlen(key));
             break;
         case Message::DELETE:
             msg.mode = Message::DELETE;
-            //msg.key_length = strlen(key); // + 1;
-            //memcpy(msg.key, key, msg.key_length);
             memcpy(msg.key.data(), key, strlen(key));
+            break;
+        case Message::EXIT:
+            running = false;
             break;
         default:
             throw std::invalid_argument("mode must be either GET, INSERT, READ_BUCKET or DELETE");            
@@ -68,13 +71,13 @@ Message sendMsg(Mailbox* mailbox, const enum Message::mode_t mode, const char* k
     }
     // Send the message
     // TODO: Check for return value of -1
-    auto idx = static_cast<size_t>(mailbox->msgs.push_back(std::move(msg)));
+    size_t idx;
+    idx = static_cast<size_t>(mailbox->msgs.push_back(std::move(msg)));
 
     // Wait for a response
     Message ret{};
-    return ret;
     while(mailbox->msgs[idx].mode != Message::RESPONSE) {
-        std::cout << "Waiting..." << std::endl;
+        //std::cout << "Waiting..." << std::endl;
     }
     ret = mailbox->msgs[idx];
     //mailbox->msgs[idx].read.store(true);
@@ -85,7 +88,7 @@ Message sendMsg(Mailbox* mailbox, const enum Message::mode_t mode, const char* k
     return ret;
 }
 
-int main(int argc, char** argv) {
+int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     std::cout << "Hello from the client!" << std::endl;
     
     // The name associated with the shared memory object
@@ -98,10 +101,10 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
     
-    //const size_t slots = 10; //64; // Number of message slots, defined in message.h
-    const size_t page_size = static_cast<size_t>(getpagesize());
-    const size_t mmap_size = sizeof(MMap) + sizeof(Message) * slots; // TODO: Check if + sizeof(Mailbox) is missing
-    const size_t num_pages = (mmap_size / page_size) + 1; // + 1 page just to make sure we have enough memory
+    //const size_t slots = 10; // Number of message slots, defined in message.h
+    //const size_t page_size = static_cast<size_t>(getpagesize());
+    //const size_t mmap_size = sizeof(MMap) + sizeof(Message) * slots;
+    //const size_t num_pages = (mmap_size / page_size) + 1; // + 1 page just to make sure we have enough memory
 
     // Truncate / Extend the shared memory object to the needed size in multiples of PAGE_SIZE
     //if(ftruncate(shm_fd, static_cast<off_t>(num_pages * page_size)) != 0) {
@@ -126,8 +129,8 @@ int main(int argc, char** argv) {
     MMap* shared_mem = reinterpret_cast<MMap*>(shared_mem_ptr);
     Mailbox* mailbox_ptr = &(shared_mem->mailbox);
 
-
     std::signal(SIGINT, signal_handler);
+    Message response{};
     // Main loop
     do {
         std::vector<std::string> input{};
@@ -149,20 +152,19 @@ int main(int argc, char** argv) {
 
 
         // Send the Message
-        //sendMsg(mailbox_ptr, Message::INSERT, "client", "ichbins");
         try {
             if(input[0] == "insert") {
                 if(input.size() != 3 || input[1].length() > MAX_LENGTH_KEY || input[2].length() > MAX_LENGTH_VAL) {
                     throw std::invalid_argument("INSERT expects exactly 2 arguments (key and value) with a maximum length of "
                             + std::to_string(MAX_LENGTH_KEY) + " and " + std::to_string(MAX_LENGTH_VAL) + " respectively");
                 }
-                sendMsg(mailbox_ptr, Message::INSERT, input[1].c_str(), input[2].c_str());
+                response = sendMsg(mailbox_ptr, Message::INSERT, input[1].c_str(), input[2].c_str());
             } else if(input[0] == "get") {
                 if(input.size() < 2 || input[1].length() > MAX_LENGTH_KEY) {
                     throw std::invalid_argument("GET expects 1 argument (the key) with a maximum length of "
                             + std::to_string(MAX_LENGTH_KEY));
                 }
-                sendMsg(mailbox_ptr, Message::GET, input[1].c_str());
+                response = sendMsg(mailbox_ptr, Message::GET, input[1].c_str());
             } else if(input[0] == "read_bucket") {
                 if(input.size() < 2 || input[1].length() > MAX_LENGTH_KEY) {
                     throw std::invalid_argument("READ_BUCKET expects 1 argument (the bucket's number)");
@@ -175,7 +177,7 @@ int main(int argc, char** argv) {
                     throw std::invalid_argument("DELETE expects 1 argument (the key) with a maximum length of "
                             + std::to_string(MAX_LENGTH_KEY));
                 }
-                sendMsg(mailbox_ptr, Message::DELETE, input[1].c_str());
+                response = sendMsg(mailbox_ptr, Message::DELETE, input[1].c_str());
 
             } else {
                 throw std::invalid_argument("the first argument must be either GET, INSERT, READ_BUCKET or DELETE");            
@@ -184,7 +186,39 @@ int main(int argc, char** argv) {
             std::cerr << e.what() << std::endl;
             continue;
         }
-        // Wait for the server's response
+        // Print out the response
+        if(input[0] == "get") {
+                std::cout << "GET " << input[1];
+                //if(response.success) {
+                if(response.success.load()) {
+                    std::cout << " -> " << uint8_to_string(response.data.data(), response.data.size()) << " succeeded";
+                } else {
+                    std::cout << " failed";
+                }
+                std::cout << std::endl;
+        } else if(input[0] == "insert") {
+                std::cout << "INSERT " << input[1] << " -> " << input[2];
+                //if(response.success) {
+                if(response.success.load()) {
+                    std::cout << " succeeded";
+                } else {
+                    std::cout << " failed";
+                }
+                std::cout << std::endl;
+        } else if(input[0] == "delete") {
+                std::cout << "DELETE " << input[1];
+                //if(response.success) {
+                if(response.success.load()) {
+                    std::cout << " -> " << uint8_to_string(response.data.data(), response.data.size()) << " succeeded";
+                } else {
+                    std::cout << " failed";
+                }
+                std::cout << std::endl;
+        } else if(input[0] == "read_bucket") {
+                // TODO
+        } else {
+            // default
+        }
 
     } while(running);
 

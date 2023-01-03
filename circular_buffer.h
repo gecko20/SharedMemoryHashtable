@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <chrono>
 #include <cstddef>
 
 #include <mutex>
@@ -8,56 +9,42 @@
 #include <shared_mutex>
 #include <iostream> // Debugging
 
+#include "mutex.h"
+
+using namespace std::chrono_literals;
+
+class timeout_exception : public std::exception {
+    public:
+        const char* what() const noexcept override {
+            return "Timeout occurred";
+        }
+};
+
 /**
  * A simple circular buffer / fixed size queue
  * The number of available slots is defined by the template parameter N.
  *
- * TODO: Timeouts with try_acquire_for and exception handling in server/client
+ * TODO: Timeouts with try_acquire_for and exception handling in server/client?
  */
 
 template <typename T, size_t N = 10>
 class CircularBuffer {
     public: 
-        //CircularBuffer<T>(size_t cap) : _buffer(std::make_unique<T[]>(cap)), _capacity(cap) {
-        CircularBuffer<T>(size_t cap) : _buffer(std::array<T, N> {}), _capacity(cap), _openSlots(N), _fullSlots(0) {
+        CircularBuffer<T>(size_t cap) : _buffer(std::array<T, N> {}), _capacity(cap), _pmutex(), _openSlots(N), _fullSlots(0) {
 
         }
 
-        //CircularBuffer<T>& operator=(const CircularBuffer<T>& other) {
-        //    std::copy(other._buffer.begin(), other._buffer.end(), _buffer.begin());
-        //    //_capacity = other.capacity();
-        //    _capacity = other._capacity;
-        //    _headIdx  = other._headIdx;
-        //    _tailIdx  = other._tailIdx;
-        //    _size     = other._size;
-
-        //    _openSlots = std::counting_semaphore<N>(other._capacity);
-        //    _fullSlots = std::counting_semaphore<N>(0);
-
-        //    return *this;
-        //}
-        //CircularBuffer<T>& operator=(CircularBuffer<T>&& other) {
-        //    _buffer   = std::move(other._buffer);
-        //    _capacity = std::move(other._capacity);
-        //    _headIdx  = std::move(other._headIdx);
-        //    _tailIdx  = std::move(other._tailIdx);
-        //    _size     = std::move(other._size);
-
-        //    _openSlots = std::counting_semaphore<N>(other._capacity);
-        //    _fullSlots = std::counting_semaphore<N>(0);
-
-        //    return *this;
-        //}
-
-        
         /**
          * Returns a reference to the slot at the provided index.
          * //Reading and writing via the subscript operator is not threadsafe per se.
          */
         T& operator[](const size_t idx) {
-            std::lock_guard<std::mutex> lock(_mutex);
-            //return &(_buffer[idx]);
-            return _buffer.at(idx);
+            //std::lock_guard<std::mutex> lock(_mutex);
+            _pmutex.lock();
+            auto& ret = _buffer.at(idx);
+            //_mutex.unlock();
+            _pmutex.unlock();
+            return ret;
         }
         //T* getPtr(const size_t idx) {
         //    return &(_buffer.data()[idx]);
@@ -75,16 +62,15 @@ class CircularBuffer {
             T elem;
             size_t idx;
             {
-                std::lock_guard<std::mutex> lock(_mutex);
+                //std::lock_guard<std::mutex> lock(_mutex);
+                _pmutex.lock();
                 elem = _buffer[_headIdx];
                 idx  = _headIdx;
+                //_mutex.unlock();
+                _pmutex.unlock();
             }
             //_openSlots.release();
 
-            //return std::make_optional<std::pair<T, int>>(std::make_pair(_buffer[_tailIdx], _tailIdx));
-            //return std::make_optional<std::pair<T&, size_t>>(std::make_pair(&_buffer[_headIdx], _headIdx));
-            //return std::make_optional(std::pair<T*, size_t>{_buffer.at(_headIdx), _headIdx});
-            //return std::make_optional(std::pair<const T*, size_t>{&(_buffer.data()[_headIdx]), _headIdx});
             return std::make_optional(std::pair<T, size_t>{elem, idx});
         }
 
@@ -98,16 +84,21 @@ class CircularBuffer {
                 return std::nullopt;
 
             _fullSlots.acquire();
+            //if(!_fullSlots.try_acquire_for(2s))
+            //    throw timeout_exception();
+
             T elem;
             size_t idx;
             {
-                std::lock_guard<std::mutex> lock(_mutex);
-                //auto elem = std::make_optional<std::pair<T, size_t>>(std::make_pair(_buffer[_headIdx], _headIdx));
-                //_buffer[_headIdx] = T(); // Not actually needed, remove for better performance
+                //std::lock_guard<std::mutex> lock(_mutex);
+                _pmutex.lock();
+                //_buffer[_headIdx] = T(); // overwrite slot, not actually needed, remove for better performance
                 elem = _buffer[_headIdx];
                 idx  = _headIdx;
                 --_size;
                 _headIdx = (_headIdx + 1) % _capacity;
+                //_mutex.unlock();
+                _pmutex.unlock();
             }
             _openSlots.release();
 
@@ -125,14 +116,21 @@ class CircularBuffer {
                 return -1;
 
             _openSlots.acquire();
+            //_openSlots.try_acquire_for(2s);
+            //if(!_fullSlots.try_acquire_for(2s))
+            //    throw timeout_exception();
+
             int ret = static_cast<int>(_tailIdx);
             {
-                std::lock_guard<std::mutex> lock(_mutex);
+                //std::lock_guard<std::mutex> lock(_mutex);
+                _pmutex.lock();
                 _buffer[_tailIdx] = elem;
                 ++_size;
                 //++_tailIdx; // TODO avoid modulo etc.
                 //_tailIdx %= _capacity;
                 _tailIdx = (_tailIdx + 1) % _capacity;
+                //_mutex.unlock();
+                _pmutex.unlock();
             }
             _fullSlots.release();
 
@@ -145,25 +143,43 @@ class CircularBuffer {
          * the CircularBuffer.
          */
         T& at(size_t idx) {
-            std::lock_guard<std::mutex> lock(_mutex);
+            //std::lock_guard<std::mutex> lock(_mutex);
+            _pmutex.lock();
             //std::unique_lock lock(_rwlock);
-            return _buffer.at(idx);
+            auto& ret = _buffer.at(idx);
+            //_mutex.unlock();
+            _pmutex.unlock();
+
+            return ret;
+            //return _buffer.at(idx);
         }
         //T* at(size_t idx) {
         //    return &(_buffer[idx]);
         //}
 
 
-        inline bool isEmpty() const {
-            std::lock_guard<std::mutex> lock(_mutex);
+        /*inline*/ bool isEmpty() const {
+            //std::lock_guard<std::mutex> lock(_mutex);
+            _pmutex.lock();
+            bool ret = _size == 0;
             //std::shared_lock lock(_rwlock);
-            return _size == 0;
+            //return _size == 0;
+            //_mutex.unlock();
+            _pmutex.unlock();
+
+            return ret;
         }
 
-        inline bool isFull() const {
-            std::lock_guard<std::mutex> lock(_mutex);
+        /*inline*/ bool isFull() const {
+            //std::lock_guard<std::mutex> lock(_mutex);
+            _pmutex.lock();
+            bool ret = _size == _capacity;
             //std::shared_lock lock(_rwlock);
-            return _size == _capacity;
+            //_mutex.unlock();
+            _pmutex.unlock();
+
+            return ret;
+            //return _size == _capacity;
         }
 
         size_t capacity() const {
@@ -171,14 +187,16 @@ class CircularBuffer {
         }
 
         size_t size() const {
-            std::lock_guard<std::mutex> lock(_mutex);
+            //std::lock_guard<std::mutex> lock(_mutex);
+            _pmutex.lock();
             //std::shared_lock lock(_rwlock);
-            return _size;
-        }
+            size_t ret = _size;
+            //_mutex.unlock();
+            _pmutex.unlock();
 
-        //size_t size_in_bytes() const {
-        //    return _size * sizeof(T) + sizeof(CircularBuffer<T>);
-        //}
+            return ret;
+            //return _size;
+        }
 
         // Debugging
         void printBuffer() const {
@@ -191,8 +209,6 @@ class CircularBuffer {
         }
 
     private:
-        //std::unique_ptr<T[]> _buffer;
-        //T[N] _buffer;
         std::array<T, N> _buffer;
 
         size_t _headIdx{0};
@@ -202,7 +218,8 @@ class CircularBuffer {
         size_t _size{0};
 
         mutable std::mutex _mutex;
+        mutable PMutex _pmutex;
         std::counting_semaphore<N> _openSlots;
         std::counting_semaphore<N> _fullSlots;
-        mutable std::shared_mutex _rwlock;
+        //mutable std::shared_mutex _rwlock;
 };
