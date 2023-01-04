@@ -3,7 +3,7 @@
 #include <chrono>
 #include <cstddef>
 
-#include <mutex>
+//#include <mutex>
 #include <optional>
 #include <semaphore>
 #include <shared_mutex>
@@ -30,7 +30,7 @@ class timeout_exception : public std::exception {
 template <typename T, size_t N = 10>
 class CircularBuffer {
     public: 
-        CircularBuffer<T>(size_t cap) : _buffer(std::array<T, N> {}), _capacity(cap), _pmutex(), _openSlots(N), _fullSlots(0) {
+        CircularBuffer<T, N>() : _buffer(std::array<T, N> {}), _capacity(N), _pmutex(), _openSlots(N), _fullSlots(0) {
 
         }
 
@@ -217,7 +217,7 @@ class CircularBuffer {
         size_t _capacity;
         size_t _size{0};
 
-        mutable std::mutex _mutex;
+        //mutable std::mutex _mutex;
         mutable PMutex _pmutex;
         std::counting_semaphore<N> _openSlots;
         std::counting_semaphore<N> _fullSlots;

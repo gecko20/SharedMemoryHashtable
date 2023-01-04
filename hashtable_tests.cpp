@@ -120,7 +120,7 @@ TEST_CASE("removing elements from the HashTable") {
 }
 
 TEST_CASE("Add elements to the CircularBuffer") {
-    CircularBuffer<int> cb{5};
+    CircularBuffer<int, 5> cb{};
 
     REQUIRE(cb.isEmpty() == true);
     REQUIRE(cb.isFull() == false);
@@ -162,7 +162,7 @@ TEST_CASE("Add elements to the CircularBuffer") {
 }
 
 TEST_CASE("Remove elements from the CircularBuffer") {
-    CircularBuffer<int> cb{5};
+    CircularBuffer<int, 5> cb{};
 
     REQUIRE(cb.isEmpty() == true);
     REQUIRE(cb.isFull() == false);
@@ -199,7 +199,7 @@ TEST_CASE("Remove elements from the CircularBuffer") {
 }
 
 TEST_CASE("Add and remove elements to/from the CircularBuffer") {
-    CircularBuffer<int> cb{5};
+    CircularBuffer<int, 5> cb{};
 
     REQUIRE(cb.isEmpty() == true);
     REQUIRE(cb.isFull() == false);

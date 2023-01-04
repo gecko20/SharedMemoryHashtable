@@ -14,5 +14,6 @@
  * @param value the C-style string which should be written to the HashTable. May be NULL or ignored when getting a value.
  * @returns a new Message containing the server's response
  */
-Message sendMsg(Mailbox* mailbox, const enum Message::mode_t mode, const char* key, const char* value = NULL);
+Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const char* key, const char* value = NULL);
+//Message sendMsg(Mailbox* mailbox, const enum Message::mode_t mode, const char* key, const char* value = NULL);
 

@@ -14,7 +14,7 @@
 #define MAX_LENGTH_KEY 128
 #define MAX_LENGTH_VAL 1024
 
-const size_t slots = 10;
+constexpr const size_t slots = 10;
 
 /**
  * A struct representing a single message which can be written by
@@ -98,9 +98,10 @@ typedef struct Message {
     }
 } Message;
 
-
-typedef struct Mailbox {
-    Mailbox(size_t slots) : msgs(CircularBuffer<Message>{slots}) {};
+template <size_t slots = 10>
+//typedef struct Mailbox {
+struct Mailbox {
+    Mailbox() : msgs(CircularBuffer<Message, slots>{}) {};
 
     //Mailbox& operator=(const Mailbox& other) {
     //    msgs = other.msgs;
@@ -112,11 +113,13 @@ typedef struct Mailbox {
     //    return *this;
     //}
 
-    CircularBuffer<Message> msgs;
-} Mailbox;
+    CircularBuffer<Message, slots> msgs;
+}; // Mailbox;
 
-typedef struct MMap {
-    MMap(size_t msg_slots) : mailbox(Mailbox(msg_slots)) {};
+//typedef struct MMap {
+template <size_t msg_slots = 10>
+struct MMap {
+    MMap() : mailbox(Mailbox<msg_slots>()) {}
     //MMap& operator=(const MMap& other) {
     //    mailbox = other.mailbox;
 
@@ -128,8 +131,8 @@ typedef struct MMap {
     //    return *this;
     //}
 
-    Mailbox mailbox;
-} MMap;
+    Mailbox<msg_slots> mailbox;
+}; // MMap;
 
 // TODO
 void printMessage(const Message& msg) {

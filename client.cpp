@@ -39,7 +39,8 @@ std::string uint8_to_string(const uint8_t* v, const size_t len) {
     return ss.str();
 }
 
-Message sendMsg(Mailbox* mailbox, const enum Message::mode_t mode, const char* key, const char* value) {
+Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const char* key, const char* value) {
+//Message sendMsg(Mailbox* mailbox, const enum Message::mode_t mode, const char* key, const char* value) {
     Message msg{};
 
     // Prepare the message
@@ -114,7 +115,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     //}
 
     void* shared_mem_ptr = mmap(NULL,
-            sizeof(MMap) + sizeof(Message) * slots,
+            sizeof(MMap<slots>) + sizeof(Message) * slots,
             PROT_READ | PROT_WRITE,
             MAP_SHARED | MAP_HASSEMAPHORE,
             shm_fd,
@@ -126,8 +127,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     }
 
     // Cast the shared memory pointer to struct MMap*
-    MMap* shared_mem = reinterpret_cast<MMap*>(shared_mem_ptr);
-    Mailbox* mailbox_ptr = &(shared_mem->mailbox);
+    MMap<slots>* shared_mem = reinterpret_cast<MMap<slots>*>(shared_mem_ptr);
+    Mailbox<slots>* mailbox_ptr = &(shared_mem->mailbox);
 
     std::signal(SIGINT, signal_handler);
     Message response{};

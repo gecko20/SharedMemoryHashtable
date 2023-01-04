@@ -93,7 +93,7 @@ std::ostream& operator<<(std::ostream& output, const Message& other) {
     return output;
 }
 
-void receiveMsg(Mailbox* mailbox) {
+void receiveMsg(Mailbox<slots>* mailbox) {
     //while(thread_running.load(std::memory_order_relaxed)) {
     while(true) {
         // Peek whether the current slot still has to be read by a client
@@ -127,15 +127,15 @@ void receiveMsg(Mailbox* mailbox) {
 
             respond(mailbox, static_cast<int>(idx), msg);
 
-            {
-                std::scoped_lock<std::mutex> lock(cout_lock);
-                std::cout << "thread " << std::this_thread::get_id() << " handling slot " << idx << std::endl;
-            }
+            //{
+            //    std::scoped_lock<std::mutex> lock(cout_lock);
+            //    std::cout << "thread " << std::this_thread::get_id() << " handling slot " << idx << std::endl;
+            //}
         }
     }
 }
 
-void respond(Mailbox* mailbox, int idx, Message msg) {
+void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
     // TODO Check for malformed requests
     Message response{};
     response.mode = Message::RESPONSE;
@@ -153,19 +153,19 @@ void respond(Mailbox* mailbox, int idx, Message msg) {
                 //memcpy(response.data.data(), value.c_str(), value.length());
                 memcpy(response.data.data(), value.c_str(), strlen(value.c_str()));
 
-                {
-                    std::scoped_lock<std::mutex> lock(cout_lock);
-                    std::cout << "GET: returned from HashTable: " << uint8_to_string(response.data.data(), response.data.size()) << std::endl;
-                }
+                //{
+                //    std::scoped_lock<std::mutex> lock(cout_lock);
+                //    std::cout << "GET: returned from HashTable: " << uint8_to_string(response.data.data(), response.data.size()) << std::endl;
+                //}
             } else {
                 // Entry was not found in the HashTable
                 //response.data_length = 0;
                 //response.success = false;
                 response.success.store(false);
-                {
-                    std::scoped_lock<std::mutex> lock(cout_lock);
-                    std::cout << "GET: did not find key " << uint8_to_string(response.key.data(), response.key.size()) << " in the HT!" << std::endl;
-                }
+                //{
+                //    std::scoped_lock<std::mutex> lock(cout_lock);
+                //    std::cout << "GET: did not find key " << uint8_to_string(response.key.data(), response.key.size()) << " in the HT!" << std::endl;
+                //}
             }
             break;
             }
@@ -178,11 +178,11 @@ void respond(Mailbox* mailbox, int idx, Message msg) {
             } else {
                 //response.success = false;
                 response.success.store(false);
-                {
-                    std::scoped_lock<std::mutex> lock(cout_lock);
-                    //std::cout << "INSERT: returned from HashTable: " << uint8_to_string(response.data.data(), response.data.size()) << std::endl;
-                    //std::cout << "INSERT: returned from HashTable: " << response.data.data() << std::endl;
-                }
+                //{
+                //    std::scoped_lock<std::mutex> lock(cout_lock);
+                //    //std::cout << "INSERT: returned from HashTable: " << uint8_to_string(response.data.data(), response.data.size()) << std::endl;
+                //    //std::cout << "INSERT: returned from HashTable: " << response.data.data() << std::endl;
+                //}
             }
             break;
             }
@@ -197,18 +197,18 @@ void respond(Mailbox* mailbox, int idx, Message msg) {
                 response.success.store(true);
                 memcpy(response.data.data(), value.c_str(), strlen(value.c_str()));
 
-                {
-                    std::scoped_lock<std::mutex> lock(cout_lock);
-                    std::cout << "DELETE: returned from HashTable: " << uint8_to_string(response.data.data(), response.data.size()) << std::endl;
-                }
+                //{
+                //    std::scoped_lock<std::mutex> lock(cout_lock);
+                //    std::cout << "DELETE: returned from HashTable: " << uint8_to_string(response.data.data(), response.data.size()) << std::endl;
+                //}
             } else {
                 // Entry was not found in the HashTable
                 //response.success = false;
                 response.success.store(false);
-                {
-                    std::scoped_lock<std::mutex> lock(cout_lock);
-                    std::cout << "DELETE: did not find key " << uint8_to_string(response.key.data(), response.key.size()) << " in the HT!" << std::endl;
-                }
+                //{
+                //    std::scoped_lock<std::mutex> lock(cout_lock);
+                //    std::cout << "DELETE: did not find key " << uint8_to_string(response.key.data(), response.key.size()) << " in the HT!" << std::endl;
+                //}
             }
             }
             break;
@@ -264,7 +264,7 @@ int main(int argc, char* argv[]) {
 
     //const size_t slots = 3; // Number of message slots, defined in message.h
     const size_t page_size = static_cast<size_t>(getpagesize());
-    const size_t mmap_size = sizeof(MMap) + sizeof(Message) * slots;
+    const size_t mmap_size = sizeof(MMap<slots>) + sizeof(Message) * slots;
     const size_t num_pages = (mmap_size / page_size) + 1; // + 1 page just to make sure we have enough memory
 
     // Truncate / Extend the shared memory object to the needed size in multiples of PAGE_SIZE
@@ -275,7 +275,7 @@ int main(int argc, char* argv[]) {
     }
 
     void* shared_mem_ptr = mmap(NULL,
-            sizeof(MMap) + sizeof(Message) * slots,
+            sizeof(MMap<slots>) + sizeof(Message) * slots,
             //num_pages * page_size,
             PROT_READ | PROT_WRITE,
             MAP_SHARED | MAP_HASSEMAPHORE,
@@ -289,14 +289,15 @@ int main(int argc, char* argv[]) {
 
     // Initialize and cast the shared memory pointer to struct MMap*
     //MMap* shared_mem = reinterpret_cast<MMap*>(shared_mem_ptr);
-    MMap* shared_mem = new(shared_mem_ptr) MMap{slots}; // Placement new
+    MMap<slots>* shared_mem = new(shared_mem_ptr) MMap<slots>{}; // Placement new
+    //MMap* shared_mem = new(shared_mem_ptr) MMap{slots}; // Placement new
 
     // Initialize the shared memory / mailbox
 
     std::cout << "Size of shared memory (in bytes): " << num_pages * page_size << std::endl;
-    std::cout << "Size of mailbox (in bytes): " << sizeof(MMap) + sizeof(Message) * slots << std::endl;
+    std::cout << "Size of mailbox (in bytes): " << sizeof(MMap<slots>) + sizeof(Message) * slots << std::endl;
 
-    Mailbox* mailbox_ptr = &(shared_mem->mailbox);
+    Mailbox<slots>* mailbox_ptr = &(shared_mem->mailbox);
 
 
     std::signal(SIGINT, signal_handler);
@@ -320,6 +321,7 @@ int main(int argc, char* argv[]) {
         std::cout << "---------------" << std::endl;
         std::cout << "HashTable:" << std::endl;
         table->print_table();
+        std::cout << "Size: " << table->size() << "; Capacity: " << table->capacity() << "; Load Factor: " << table->load_factor() << std::endl;
         std::cout << "---------------" << std::endl;
     }
 
@@ -339,7 +341,7 @@ int main(int argc, char* argv[]) {
     shared_mem->~MMap();
 
     shm_unlink(name);
-    munmap(shared_mem_ptr, sizeof(MMap) + sizeof(Message) * slots);
+    munmap(shared_mem_ptr, sizeof(MMap<slots>) + sizeof(Message) * slots);
     close(shm_fd);
 
     return 0;
