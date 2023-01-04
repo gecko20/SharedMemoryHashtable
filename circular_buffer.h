@@ -30,7 +30,8 @@ class timeout_exception : public std::exception {
 template <typename T, size_t N = 10>
 class CircularBuffer {
     public: 
-        CircularBuffer<T, N>() : _buffer(std::array<T, N> {}), _capacity(N), _pmutex(), _openSlots(N), _fullSlots(0) {
+        //CircularBuffer<T, N>() : _buffer(std::array<T, N> {}), _capacity(N), _pmutex(), _openSlots(N), _fullSlots(0) {
+        CircularBuffer() : _buffer(std::array<T, N> {}), _capacity(N), _pmutex(), _openSlots(N), _fullSlots(0) {
 
         }
 

@@ -57,7 +57,7 @@ typedef struct Message {
         //std::atomic_init(&read, false);
     }
 
-    constexpr Message(Message& other) : mode(other.mode),
+    Message(Message& other) : mode(other.mode),
                                         //mode(other.mode.load()),
                                         //read(other.read.load()),
                                         //success(false),
@@ -65,7 +65,7 @@ typedef struct Message {
                                         key(other.key),
                                         data(other.data) { }
 
-    constexpr Message(Message&& other) : mode(std::move(other.mode)),
+    Message(Message&& other) : mode(std::move(other.mode)),
                                          //mode(other.mode.load()),
                                          //read(other.read.load(std::memory_order_seq_cst)),
                                          //success(false),
@@ -73,7 +73,7 @@ typedef struct Message {
                                          key(std::move(other.key)),
                                          data(std::move(other.data)) { }
 
-    constexpr Message& operator=(const Message& other) {
+    Message& operator=(const Message& other) {
         mode = other.mode;
         //mode.store(other.mode.load());
         //read = other.read.load(std::memory_order_acquire);
@@ -86,7 +86,7 @@ typedef struct Message {
         std::copy(other.data.begin(), other.data.end(), data.begin());
         return *this;
     }
-    constexpr Message& operator=(Message&& other) {
+    Message& operator=(Message&& other) {
         mode = std::move(other.mode);
         //mode.store(other.mode.load());
         //read = other.read.load(std::memory_order_seq_cst);
