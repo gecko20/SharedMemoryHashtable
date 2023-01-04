@@ -142,7 +142,7 @@ class CircularBuffer {
          * The slot can be modified but is ignored in other functionality of
          * the CircularBuffer.
          */
-        T& at(size_t idx) {
+        T& at(const size_t idx) {
             //std::lock_guard<std::mutex> lock(_mutex);
             _pmutex.lock();
             //std::unique_lock lock(_rwlock);
@@ -183,6 +183,10 @@ class CircularBuffer {
         }
 
         size_t capacity() const {
+            _pmutex.lock();
+            size_t ret = _capacity;
+            _pmutex.unlock();
+            return ret;
             return _capacity;
         }
 
