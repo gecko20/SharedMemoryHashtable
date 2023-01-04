@@ -14,7 +14,8 @@
 #define MAX_LENGTH_KEY 128
 #define MAX_LENGTH_VAL 1024
 
-constexpr const size_t slots = 10;
+//constexpr const size_t slots = 10;
+constexpr const size_t slots = 2;
 
 /**
  * A struct representing a single message which can be written by
