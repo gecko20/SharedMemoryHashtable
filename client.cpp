@@ -19,6 +19,10 @@
 #include <sstream>
 #include <iomanip>
 
+#if defined(__linux__)
+    #define MAP_HASSEMAPHORE 0
+#endif
+
 /**
  * An example client storing C-style strings in a HashTable managed by
  * the example server using C-style strings as keys.

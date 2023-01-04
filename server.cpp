@@ -24,6 +24,10 @@
 #include <sstream>
 #include <iomanip>
 
+#if defined(__linux__)
+    #define MAP_HASSEMAPHORE 0
+#endif
+
 using namespace std::chrono_literals;
 
 volatile bool running = true;
