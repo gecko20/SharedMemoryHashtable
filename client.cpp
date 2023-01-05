@@ -84,14 +84,15 @@ Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const 
     idx = static_cast<size_t>(mailbox->msgs.push_back(msg)); // TODO: Maybe return a condition variable to check on, too?
     while(idx == static_cast<size_t>(-1)) {
         // push_back failed due to the Message buffer being full, wait and try again
-        std::cout << "push_back() failed: Message buffer full" << std::endl;
+        //std::cout << "push_back() failed: Message buffer full" << std::endl;
         
-        std::this_thread::sleep_for(10ms);
+        std::this_thread::sleep_for(5ms);
         idx = static_cast<size_t>(mailbox->msgs.push_back(msg));
     }
 
-    // Wait for a response
+    // Wait for a response TODO
     Message ret{};
+    return ret;
     //Message::mode_t m{Message::DEFAULT};
     // Wait for the response to be marked as ready
     //mailbox->msgs[idx].ready.wait(false);
@@ -115,7 +116,10 @@ Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const 
 //    }
     //mailbox->msgs.lock(); 
 //    try {
+    {
+        std::lock_guard<Spinlock> lock(mailbox->msgs[idx].rlock);
     ret = mailbox->msgs[idx];
+    }
 //            } catch(std::out_of_range& e) {
 //                //std::cerr << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
 //                std::cout << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
@@ -128,9 +132,12 @@ Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const 
     //mailbox->msgs.unlock();
 
     // Reset the response's slot
+    {
+        std::lock_guard<Spinlock> lock(mailbox->msgs[idx].rlock);
     mailbox->msgs[idx].mode = Message::DEFAULT;
     mailbox->msgs[idx].ready.store(false);
     mailbox->msgs[idx].ready.notify_all();
+    }
     return ret;
 }
 

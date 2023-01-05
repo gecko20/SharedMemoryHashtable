@@ -115,15 +115,20 @@ void receiveMsg(Mailbox<slots>* mailbox) {
         //if(peek_elem && peek_elem->first->mode == Message::RESPONSE && peek_elem->first->read.load() == false)
         //if(peek_elem && peek_elem->first.mode == Message::RESPONSE && peek_elem->first.read.load() == false)
         //    peek_elem->first.read.wait(false);
-        const auto& peek_elem = mailbox->msgs.peek();
+        //const auto& peek_elem = mailbox->msgs.peek();
         //while(peek_elem && peek_elem->first.mode == Message::RESPONSE && peek_elem->first.ready.load() == false) {
         //    std::this_thread::sleep_for(10ms);
         //    //peek_elem = msgs.peek();
         //}
-        if(peek_elem && peek_elem->first.mode == Message::RESPONSE) {
-            // Wait for the client to reset the slot
-            peek_elem->first.ready.wait(true);
-        }
+        //if(peek_elem && peek_elem->first.mode == Message::RESPONSE) {
+        //    // Wait for the client to reset the slot
+        //    peek_elem->first.ready.wait(true);
+        //}
+        //const auto& peek_elem = mailbox->msgs.peek();
+        //while(peek_elem && peek_elem->first.mode == Message::RESPONSE && peek_elem->first.ready.load() == false) {
+        //    std::this_thread::sleep_for(10ms);
+        //    //peek_elem = mailbox->msgs.peek();
+        //}
 
         auto elem = mailbox->msgs.pop();
         if(elem) {
@@ -246,8 +251,9 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
     //mailbox->msgs[static_cast<size_t>(idx)].success.store(response.success.load());
     //mailbox->msgs[static_cast<size_t>(idx)].ready.store(response.ready.load());
     //mailbox->msgs[static_cast<size_t>(idx)].ready.notify_one();
-   
-    mailbox->msgs.update(static_cast<size_t>(idx), response);
+
+    //mailbox->msgs.update(static_cast<size_t>(idx), response);
+    mailbox->msgs[static_cast<size_t>(idx)] = response;
 
     //response.ready.notify_all();
     //mailbox->msgs[static_cast<size_t>(idx)].ready.notify_all();

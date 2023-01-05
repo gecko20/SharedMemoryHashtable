@@ -18,6 +18,29 @@
 constexpr const size_t slots = 2;
 
 /**
+ * Simple spinlock protecting reading accesses on single Messages
+ */
+class Spinlock {
+    public:
+        void lock() {
+            while (!try_lock()) {
+                // TODO: sleep
+            }
+        }
+
+        inline bool try_lock() {
+            return !_flag.test_and_set();
+        }
+
+        void unlock() {
+            _flag.clear();
+        }
+    private:
+        //std::atomic_flag _flag{ ATOMIC_FLAG_INIT };
+        std::atomic_flag _flag{false};
+};
+
+/**
  * A struct representing a single message which can be written by
  * a client and read by the server.
  * It defines a mode / request type the client sends to the server
@@ -47,6 +70,7 @@ typedef struct Message {
     //bool success;
     std::atomic<bool> success;
     std::atomic<bool> ready;
+    Spinlock rlock;
     std::array<uint8_t, MAX_LENGTH_KEY> key;
     std::array<uint8_t, MAX_LENGTH_VAL> data;
 

@@ -115,7 +115,8 @@ class CircularBuffer {
             if(isEmpty())
                 return std::nullopt;
 
-            _fullSlots.acquire();
+            //_fullSlots.acquire();
+            _fullSlots.wait();
             //if(!_fullSlots.try_acquire_for(2s))
             //    throw timeout_exception();
 
@@ -132,7 +133,8 @@ class CircularBuffer {
                 //_mutex.unlock();
                 _pmutex.unlock();
             }
-            _openSlots.release();
+            //_openSlots.release();
+            _openSlots.post();
 
             return std::make_optional<std::pair<T, size_t>>(std::make_pair(elem, idx));
         }
@@ -147,7 +149,8 @@ class CircularBuffer {
             if(isFull())
                 return -1;
 
-            _openSlots.acquire();
+            //_openSlots.acquire();
+            _openSlots.wait();
             //_openSlots.try_acquire_for(2s);
             //if(!_fullSlots.try_acquire_for(2s))
             //    throw timeout_exception();
@@ -164,7 +167,8 @@ class CircularBuffer {
                 //_mutex.unlock();
                 _pmutex.unlock();
             }
-            _fullSlots.release();
+            //_fullSlots.release();
+            _fullSlots.post();
 
             return ret;
         }
@@ -262,7 +266,9 @@ class CircularBuffer {
 
         //mutable std::mutex _mutex;
         mutable PMutex _pmutex;
-        std::counting_semaphore<N> _openSlots;
-        std::counting_semaphore<N> _fullSlots;
+        //std::counting_semaphore<N> _openSlots;
+        //std::counting_semaphore<N> _fullSlots;
+        CountingSemaphore _openSlots;
+        CountingSemaphore _fullSlots;
         //mutable std::shared_mutex _rwlock;
 };
