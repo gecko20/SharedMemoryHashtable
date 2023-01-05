@@ -349,12 +349,13 @@ int main(int argc, char* argv[]) {
 
     // Main loop
     while(running) {
+        std::scoped_lock lock(cout_lock);
         std::this_thread::sleep_for(2s);
         std::cout << "CircularBuffer:" << std::endl;
         mailbox_ptr->msgs.printBuffer();
         std::cout << "---------------" << std::endl;
         std::cout << "HashTable:" << std::endl;
-        table->print_table();
+        //table->print_table();
         std::cout << "Size: " << table->size() << "; Capacity: " << table->capacity() << "; Load Factor: " << table->load_factor() << std::endl;
         std::cout << "---------------" << std::endl;
     }

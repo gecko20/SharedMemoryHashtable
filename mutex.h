@@ -1,7 +1,7 @@
 #pragma once
 
-#include "pthread.h"
-#include "semaphore.h"
+#include <pthread.h>
+#include <semaphore.h>
 
 /**
  * Simple wrapper class for pthread_mutexes since

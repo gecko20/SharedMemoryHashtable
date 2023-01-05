@@ -3,6 +3,8 @@
 #include <chrono>
 #include <cstddef>
 
+#include <cstdlib>
+
 //#include <mutex>
 #include <optional>
 #include <semaphore>
@@ -129,6 +131,12 @@ class CircularBuffer {
                 elem = _buffer[_headIdx];
                 idx  = _headIdx;
                 --_size;
+                if((long long)_size < 0) {
+                    std::cout << "pop(): _size < 0: " << _size << std::endl;
+                    std::cout << "elem = " << elem << std::endl;
+                    std::cout << "idx = " << idx << std::endl;
+                    std::exit(-1);
+                }
                 _headIdx = (_headIdx + 1) % _capacity;
                 //_mutex.unlock();
                 _pmutex.unlock();
@@ -161,6 +169,10 @@ class CircularBuffer {
                 _pmutex.lock();
                 _buffer[_tailIdx] = elem;
                 ++_size;
+                if((long long)_size < 0) {
+                    std::cout << "push(): _size < 0!" << std::endl;
+                    std::exit(-1);
+                }
                 //++_tailIdx; // TODO avoid modulo etc.
                 //_tailIdx %= _capacity;
                 _tailIdx = (_tailIdx + 1) % _capacity;

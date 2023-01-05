@@ -1,6 +1,6 @@
 CC := clang++
 CXX_FLAGS := -g -Wall -Wextra -Wconversion -pedantic -Wfatal-errors -std=c++20
-LD_FLAGS := #-pthread
+LD_FLAGS := -pthread
 
 # Build directory
 BUILD := build
