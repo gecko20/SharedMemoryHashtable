@@ -1,7 +1,14 @@
 #pragma once
 
 #include <pthread.h>
+#ifdef __APPLE__
+// macOS does not support POSIX semaphores, but those from System V
+//#include <sys/sem.h>
+//But since those are... special we use our own Semaphore class
+//#include <condition_variable>
+#else
 #include <semaphore.h>
+#endif
 
 /**
  * Simple wrapper class for pthread_mutexes since
@@ -30,9 +37,18 @@ class CountingSemaphore {
         CountingSemaphore(unsigned int value = 0);
         ~CountingSemaphore();
 
-        void wait();
-        void post();
+        void wait(); // acquire
+        void post(); // release
+        
+        bool try_post();
     private:
         pthread_mutex_t _mutex;
+#ifdef __APPLE__
+        //std::condition_variable _cond;
+        pthread_cond_t _cond;
+        size_t _count;
+#else
         sem_t           _sem;
+#endif
 };
+
