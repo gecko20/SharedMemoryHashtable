@@ -8,6 +8,7 @@
 #include <semaphore>
 #include <shared_mutex>
 #include <iostream> // Debugging
+#include <stdexcept>
 
 #include "mutex.h"
 
@@ -41,15 +42,45 @@ class CircularBuffer {
          */
         T& operator[](const size_t idx) {
             //std::lock_guard<std::mutex> lock(_mutex);
+            //_fullSlots.acquire();
             _pmutex.lock();
-            auto& ret = _buffer.at(idx);
-            //_mutex.unlock();
+            //auto& ret;
+            //auto& ret = _buffer.at(idx);
+            //try {
+            //    T& ret = _buffer.at(idx);
+            //    _pmutex.unlock();
+            //    _openSlots.release();
+            //    return ret;
+            //} catch(std::out_of_range& e) {
+            //    //std::cerr << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
+            //    //std::cout << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
+            //    throw e;
+            //    _pmutex.unlock();
+            //    _openSlots.release();
+            //}
+            //T& ret = _buffer.at(idx);
+            T& ret = _buffer[idx];
             _pmutex.unlock();
+            //_openSlots.release();
             return ret;
+            //_mutex.unlock();
+            //_pmutex.unlock();
+            //return ret;
         }
         //T* getPtr(const size_t idx) {
         //    return &(_buffer.data()[idx]);
         //}
+
+        /**
+         * Updates the given slot by overwriting it with the provided element.
+         */
+        void update(size_t idx, T elem) {
+            if(idx >= _capacity)
+                throw std::out_of_range("Update failed");
+            _pmutex.lock();
+            _buffer[idx] = elem;
+            _pmutex.unlock();
+        }
 
         /**
          * @returns a pointer to the element at the current head without modifying it as well as its index.
@@ -201,6 +232,13 @@ class CircularBuffer {
 
             return ret;
             //return _size;
+        }
+
+        void lock() const {
+            _pmutex.lock();
+        }
+        void unlock() const {
+            _pmutex.unlock();
         }
 
         // Debugging

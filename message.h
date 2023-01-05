@@ -46,6 +46,7 @@ typedef struct Message {
     //uint8_t data[MAX_LENGTH_VAL];
     //bool success;
     std::atomic<bool> success;
+    std::atomic<bool> ready;
     std::array<uint8_t, MAX_LENGTH_KEY> key;
     std::array<uint8_t, MAX_LENGTH_VAL> data;
 
@@ -53,6 +54,7 @@ typedef struct Message {
     //Message() = default;
     Message() : mode(Message::DEFAULT),
                 success(false),
+                ready(false),
                 key({}),
                 data({}) {
         //std::atomic_init(&read, false);
@@ -63,6 +65,7 @@ typedef struct Message {
                                         //read(other.read.load()),
                                         //success(false),
                                         success(other.success.load()),
+                                        ready(other.ready.load()),
                                         key(other.key),
                                         data(other.data) { }
 
@@ -71,6 +74,7 @@ typedef struct Message {
                                          //read(other.read.load(std::memory_order_seq_cst)),
                                          //success(false),
                                          success(other.success.load()),
+                                         ready(other.ready.load()),
                                          key(std::move(other.key)),
                                          data(std::move(other.data)) { }
 
@@ -83,6 +87,7 @@ typedef struct Message {
         //data = other.data;
         //success = other.success;
         success.store(other.success.load());
+        ready.store(other.ready.load());
         std::copy(other.key.begin(), other.key.end(), key.begin());
         std::copy(other.data.begin(), other.data.end(), data.begin());
         return *this;
@@ -93,6 +98,7 @@ typedef struct Message {
         //read = other.read.load(std::memory_order_seq_cst);
         //success = std::move(other.success);
         success.store(other.success.load());
+        ready.store(other.ready.load());
         key  = std::move(other.key);
         data = std::move(other.data);
         return *this;

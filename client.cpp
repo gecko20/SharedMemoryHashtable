@@ -16,6 +16,8 @@
 #include "message.h"
 //#include "hashtable.h"
 
+#include <chrono>
+#include <thread>
 #include <sstream>
 #include <iomanip>
 
@@ -27,6 +29,7 @@
  * An example client storing C-style strings in a HashTable managed by
  * the example server using C-style strings as keys.
  */
+using namespace std::chrono_literals;
 
 bool running = true;
 void signal_handler([[maybe_unused]] int signal) {
@@ -77,19 +80,57 @@ Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const 
     // Send the message
     // TODO: Check for return value of -1
     size_t idx;
-    idx = static_cast<size_t>(mailbox->msgs.push_back(std::move(msg)));
+    //idx = static_cast<size_t>(mailbox->msgs.push_back(std::move(msg)));
+    idx = static_cast<size_t>(mailbox->msgs.push_back(msg)); // TODO: Maybe return a condition variable to check on, too?
+    while(idx == static_cast<size_t>(-1)) {
+        // push_back failed due to the Message buffer being full, wait and try again
+        std::cout << "push_back() failed: Message buffer full" << std::endl;
+        
+        std::this_thread::sleep_for(10ms);
+        idx = static_cast<size_t>(mailbox->msgs.push_back(msg));
+    }
 
     // Wait for a response
     Message ret{};
+    //Message::mode_t m{Message::DEFAULT};
+    // Wait for the response to be marked as ready
+    //mailbox->msgs[idx].ready.wait(false);
     while(mailbox->msgs[idx].mode != Message::RESPONSE) {
-        //std::cout << "Waiting..." << std::endl;
+
     }
+    mailbox->msgs[idx].ready.wait(false);
+    //while(!mailbox->msgs[idx].ready.load()) {
+
+    //}
+
+    //while(mailbox->msgs[idx].mode != Message::RESPONSE) {
+//    while(m != Message::RESPONSE) {
+//        //std::cout << "Waiting..." << std::endl;
+//        try {
+//            m = mailbox->msgs[idx].mode;
+//        } catch(std::out_of_range& e) {
+//            //std::cerr << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
+//            std::cout << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
+//        }
+//    }
+    //mailbox->msgs.lock(); 
+//    try {
     ret = mailbox->msgs[idx];
+//            } catch(std::out_of_range& e) {
+//                //std::cerr << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
+//                std::cout << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
+//            }
     //mailbox->msgs[idx].read.store(true);
     //mailbox->msgs[idx].read.notify_all();
     //mailbox->msgs.getPtr(idx)->read.store(true);
     //mailbox->msgs.getPtr(idx)->read.notify_all();
 
+    //mailbox->msgs.unlock();
+
+    // Reset the response's slot
+    mailbox->msgs[idx].mode = Message::DEFAULT;
+    mailbox->msgs[idx].ready.store(false);
+    mailbox->msgs[idx].ready.notify_all();
     return ret;
 }
 
