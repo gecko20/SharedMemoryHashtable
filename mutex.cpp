@@ -39,7 +39,9 @@ void PMutex::unlock() {
 
 
 CountingSemaphore::CountingSemaphore(unsigned int value) {
+#ifdef __APPLE__
     _count = value;
+#endif
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);

@@ -37,8 +37,8 @@ class CountingSemaphore {
         CountingSemaphore(unsigned int value = 0);
         ~CountingSemaphore();
 
-        void wait(); // acquire
-        void post(); // release
+        void wait(); // acquire, P
+        void post(); // release, signal V
         
         bool try_post();
     private:
