@@ -180,5 +180,14 @@ void CountingSemaphore::post() {
 }
 
 unsigned int CountingSemaphore::current_value() {
+#ifdef __APPLE__
     return static_cast<unsigned int>(_count.load());
+#else
+    unsigned int val = 0;
+    if(sem_getvalue(&_sem, &val) == -1) {
+        std::perror("CountingSemaphore::current_value(): sem_getValue()");
+        std::exit(-1);
+    }
+    return val;
+#endif
 }
