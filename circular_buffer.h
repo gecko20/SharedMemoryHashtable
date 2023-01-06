@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 
@@ -118,6 +119,7 @@ class CircularBuffer {
                 return std::nullopt;
 
             //_fullSlots.acquire();
+            _nWait_full++;
             _fullSlots.wait();
             //if(!_fullSlots.try_acquire_for(2s))
             //    throw timeout_exception();
@@ -139,9 +141,13 @@ class CircularBuffer {
                 }
                 _headIdx = (_headIdx + 1) % _capacity;
                 //_mutex.unlock();
+                unsigned int fullVal = _fullSlots.current_value();
+                unsigned int openVal = _openSlots.current_value();
+                std::cout << "fullVal: " << fullVal << "; openVal: " << openVal << std::endl;
                 _pmutex.unlock();
             }
             //_openSlots.release();
+            _nPost_open++;
             _openSlots.post();
 
             return std::make_optional<std::pair<T, size_t>>(std::make_pair(elem, idx));
@@ -158,15 +164,17 @@ class CircularBuffer {
                 return -1;
 
             //_openSlots.acquire();
+            _nWait_open++;
             _openSlots.wait();
             //_openSlots.try_acquire_for(2s);
             //if(!_fullSlots.try_acquire_for(2s))
             //    throw timeout_exception();
 
-            int ret = static_cast<int>(_tailIdx);
+            int ret; //= static_cast<int>(_tailIdx);
             {
                 //std::lock_guard<std::mutex> lock(_mutex);
                 _pmutex.lock();
+                ret = static_cast<int>(_tailIdx);
                 _buffer[_tailIdx] = elem;
                 ++_size;
                 if((long long)_size < 0) {
@@ -177,9 +185,13 @@ class CircularBuffer {
                 //_tailIdx %= _capacity;
                 _tailIdx = (_tailIdx + 1) % _capacity;
                 //_mutex.unlock();
+                unsigned int fullVal = _fullSlots.current_value();
+                unsigned int openVal = _openSlots.current_value();
+                std::cout << "fullVal: " << fullVal << "; openVal: " << openVal << std::endl;
                 _pmutex.unlock();
             }
             //_fullSlots.release();
+            _nPost_full++;
             _fullSlots.post();
 
             return ret;
@@ -268,6 +280,10 @@ class CircularBuffer {
         }
 
     private:
+        std::atomic<size_t> _nWait_open{0};
+        std::atomic<size_t> _nPost_open{0};
+        std::atomic<size_t> _nWait_full{0};
+        std::atomic<size_t> _nPost_full{0};
         std::array<T, N> _buffer;
 
         size_t _headIdx{0};

@@ -1,10 +1,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <pthread.h>
+#include <sys/time.h>
 
 #include "mutex.h"
 
 PMutex::PMutex() {
+    _handle = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);
     //pthread_mutexattr_setrobust(&attr);
@@ -40,8 +42,11 @@ void PMutex::unlock() {
 
 CountingSemaphore::CountingSemaphore(unsigned int value) {
 #ifdef __APPLE__
-    _count = value;
+    //_count = value;
+    //std::atomic_init<size_t>(&_count, value);
+    _count.store(value);
 #endif
+    _mutex = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
@@ -52,6 +57,7 @@ CountingSemaphore::CountingSemaphore(unsigned int value) {
     }
 #ifdef __APPLE__
     //_sem = dispatch_semaphore_create(value);
+    _cond = PTHREAD_COND_INITIALIZER;
     pthread_condattr_t cond_attr;
     pthread_condattr_init(&cond_attr);
     pthread_condattr_setpshared(&cond_attr, PTHREAD_PROCESS_SHARED);
@@ -95,18 +101,33 @@ void CountingSemaphore::wait() {
         std::exit(-1);
     }
     // Wait for _count > 0
-    while(!_count) {
+    //while(!_count) {
+    while(_count.load() <= 0) {
+        // For some reason, pthread_cond_wait leads to an 'Operation timed out'
+        // error on macOS, so we will use pthread_cond_timedwait and set the timeout
+        // to some large value
         if(pthread_cond_wait(&_cond, &_mutex) != 0) {
             std::perror("CountingSemaphore::wait(): pthread_cond_wait()");
             std::exit(-1);
         }
+        //struct timeval tv;
+        //struct timespec ts;
+        //gettimeofday(&tv, NULL);
+        //ts.tv_sec = tv.tv_sec + 10;
+        //ts.tv_nsec = 0;
+        //if(pthread_cond_timedwait(&_cond, &_mutex, &ts) != 0) {
+        //    std::perror("CountingSemaphore::wait(): pthread_cond_wait()");
+        //    std::exit(-1);
+        //}
     
     }
-    --_count;
+    //--_count;
+    _count.store(_count.load() - 1);
 
     // Notify a waiting thread
-    if(_count > 0) {
+    if(_count.load() > 0) {
         if(pthread_cond_signal(&_cond) != 0) {
+        //if(pthread_cond_broadcast(&_cond) != 0) {
             std::perror("CountingSemaphore::post(): pthread_cond_signal()");
             std::exit(-1);
         }
@@ -134,11 +155,13 @@ void CountingSemaphore::post() {
         std::exit(-1);
     }
 
-    ++_count;
+    //++_count;
+    _count.store(_count.load() + 1);
 
     // Notify a waiting thread
-    if(_count > 0) {
+    if(_count.load() > 0) {
         if(pthread_cond_signal(&_cond) != 0) {
+        //if(pthread_cond_broadcast(&_cond) != 0) {
             std::perror("CountingSemaphore::post(): pthread_cond_signal()");
             std::exit(-1);
         }
@@ -156,3 +179,6 @@ void CountingSemaphore::post() {
 #endif
 }
 
+unsigned int CountingSemaphore::current_value() {
+    return static_cast<unsigned int>(_count.load());
+}

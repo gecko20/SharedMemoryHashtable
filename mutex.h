@@ -6,6 +6,7 @@
 //#include <sys/sem.h>
 //But since those are... special we use our own Semaphore class
 //#include <condition_variable>
+#include <atomic>
 #else
 #include <semaphore.h>
 #endif
@@ -40,13 +41,16 @@ class CountingSemaphore {
         void wait(); // acquire, P
         void post(); // release, signal V
         
-        bool try_post();
+        //bool try_post();
+        unsigned int current_value();
+
     private:
         pthread_mutex_t _mutex;
 #ifdef __APPLE__
         //std::condition_variable _cond;
         pthread_cond_t _cond;
-        size_t _count;
+        //size_t _count;
+        std::atomic<size_t> _count;
 #else
         sem_t           _sem;
 #endif
