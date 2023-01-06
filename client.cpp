@@ -84,7 +84,7 @@ Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const 
     idx = static_cast<size_t>(mailbox->msgs.push_back(msg)); // TODO: Maybe return a condition variable to check on, too?
     while(idx == static_cast<size_t>(-1)) {
         // push_back failed due to the Message buffer being full, wait and try again
-        //std::cout << "push_back() failed: Message buffer full" << std::endl;
+        std::cout << "push_back() failed: Message buffer full" << std::endl;
         
         std::this_thread::sleep_for(5ms);
         idx = static_cast<size_t>(mailbox->msgs.push_back(msg));
