@@ -23,6 +23,8 @@ class PMutex {
         void lock();
         void unlock();
 
+        pthread_mutex_t* getHandle();
+
     private:
         pthread_mutex_t _handle;
 };

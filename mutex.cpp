@@ -40,6 +40,10 @@ void PMutex::unlock() {
     }
 }
 
+pthread_mutex_t* PMutex::getHandle() {
+    return &_handle;
+}
+
 
 CountingSemaphore::CountingSemaphore(unsigned int value) {
 #ifdef __APPLE__

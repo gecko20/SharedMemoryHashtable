@@ -100,47 +100,15 @@ std::ostream& operator<<(std::ostream& output, const Message& other) {
 void receiveMsg(Mailbox<slots>* mailbox) {
     //while(thread_running.load(std::memory_order_relaxed)) {
     while(true) {
-        // Peek whether the current slot still has to be read by a client
-        // This is necessary because of the case of a wrap-around in the
-        // CircularBuffer which could lead to the response being overwritten.
-        // TODO: Prevent a deadlock if the client does not exist anymore
-        //const auto& peek_elem = mailbox->msgs.peek();
-        //while(elem && elem->first.mode == Message::RESPONSE && elem->first.read.load() == false) {
-        //    //sleep(1); // TODO: Better solution
-        //                // Futures would be great, but with shared memory and
-        //                // multiple processes they could lead to problems
-        //    std::this_thread::sleep_for(10ms);
-        //    elem = mailbox->msgs.peek();
-        //}
-        //if(peek_elem && peek_elem->first->mode == Message::RESPONSE && peek_elem->first->read.load() == false)
-        //if(peek_elem && peek_elem->first.mode == Message::RESPONSE && peek_elem->first.read.load() == false)
-        //    peek_elem->first.read.wait(false);
-        //const auto& peek_elem = mailbox->msgs.peek();
-        //while(peek_elem && peek_elem->first.mode == Message::RESPONSE && peek_elem->first.ready.load() == false) {
-        //    std::this_thread::sleep_for(10ms);
-        //    //peek_elem = msgs.peek();
-        //}
-        //if(peek_elem && peek_elem->first.mode == Message::RESPONSE) {
-        //    // Wait for the client to reset the slot
-        //    peek_elem->first.ready.wait(true);
-        //}
-        //const auto& peek_elem = mailbox->msgs.peek();
-        //while(peek_elem && peek_elem->first.mode == Message::RESPONSE && peek_elem->first.ready.load() == false) {
-        //    std::this_thread::sleep_for(10ms);
-        //    //peek_elem = mailbox->msgs.peek();
-        //}
+        // TODO: Prevent a deadlock if the client does not exist anymore?
 
         auto elem = mailbox->msgs.pop();
         if(elem) {
             auto& msg = elem->first;
             auto idx = elem->second;
-            // Set the Message's slot's mode to RESPONSE as to prevent the server
-            // overwriting it prematurely TODO
-            //mailbox->msgs.at(idx).mode = Message::RESPONSE;
 
             // Check for exit condition
             if(msg.mode == Message::EXIT)
-            //if(msg.mode.load() == Message::EXIT)
                 break;
 
             respond(mailbox, static_cast<int>(idx), msg);
@@ -157,7 +125,6 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
     // TODO Check for malformed requests
     Message response{};
     response.mode = Message::RESPONSE;
-    //response.mode.store(Message::RESPONSE);
     response.key = msg.key;
 
     switch(msg.mode) {
@@ -165,8 +132,8 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
             auto result = table->get(uint8_to_string(msg.key.data(), msg.key.size()));
             if(result) {
                 auto& value = *result;
-                //response.success = true;
-                response.success.store(true);
+                response.success = true;
+                //response.success.store(true);
                 //response.data_length = value.length(); //+ 1;
                 //memcpy(response.data.data(), value.c_str(), value.length());
                 memcpy(response.data.data(), value.c_str(), strlen(value.c_str()));
@@ -178,8 +145,8 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
             } else {
                 // Entry was not found in the HashTable
                 //response.data_length = 0;
-                //response.success = false;
-                response.success.store(false);
+                response.success = false;
+                //response.success.store(false);
                 //{
                 //    std::scoped_lock<std::mutex> lock(cout_lock);
                 //    std::cout << "GET: did not find key " << uint8_to_string(response.key.data(), response.key.size()) << " in the HT!" << std::endl;
@@ -190,12 +157,12 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
         case Message::INSERT: {
             bool result = table->insert(uint8_to_string(msg.key.data(), msg.key.size()), uint8_to_string(msg.data.data(), msg.data.size()));
             if(result) {
-                //response.success = true;
-                response.success.store(true);
+                response.success = true;
+                //response.success.store(true);
                 memcpy(response.data.data(), &result, sizeof(bool));
             } else {
-                //response.success = false;
-                response.success.store(false);
+                response.success = false;
+                //response.success.store(false);
                 //{
                 //    std::scoped_lock<std::mutex> lock(cout_lock);
                 //    //std::cout << "INSERT: returned from HashTable: " << uint8_to_string(response.data.data(), response.data.size()) << std::endl;
@@ -211,8 +178,8 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
             auto result = table->remove(uint8_to_string(msg.key.data(), msg.key.size()));
             if(result) {
                 auto& value = *result;
-                //response.success = true;
-                response.success.store(true);
+                response.success = true;
+                //response.success.store(true);
                 memcpy(response.data.data(), value.c_str(), strlen(value.c_str()));
 
                 //{
@@ -221,8 +188,8 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
                 //}
             } else {
                 // Entry was not found in the HashTable
-                //response.success = false;
-                response.success.store(false);
+                response.success = false;
+                //response.success.store(false);
                 //{
                 //    std::scoped_lock<std::mutex> lock(cout_lock);
                 //    std::cout << "DELETE: did not find key " << uint8_to_string(response.key.data(), response.key.size()) << " in the HT!" << std::endl;
@@ -231,51 +198,42 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
             }
             break;
         case Message::RESPONSE:
-            // TODO: Check if RESPONSE has been read, then overwrite/delete this message
+            // Should never happen
             return;
             break;
         default:
+            // Should never happen
+            std::cout << "default case!" << std::endl;
             return;
             break;
     }
 
+    
+    // Respond
+    mailbox->mutexes[idx].lock();
     // Wait for the response's slot to be ready to be written to
     // which is the case if the ready flag is false
-    //if(mailbox->responses[idx].ready.test())
-    //    mailbox->responses[idx].ready.wait(true);
-    //mailbox->responses[idx].rlock.lock();
-    mailbox->responses[idx].mutex.lock();
+    //
+    // ready must be false here, wait for that condition
+    while(mailbox->responses[idx].ready.test()) {
+        if((errno = pthread_cond_wait(&(mailbox->rcvs[idx]), mailbox->mutexes[idx].getHandle())) != 0) {
+            std::perror("client.cpp: pthread_cond_signal()");
+            std::exit(-1);
+        }
+    }
     // Write the response in the request's slot in the responses' array
     mailbox->responses[idx].key  = response.key;
     mailbox->responses[idx].data = response.data;
     mailbox->responses[idx].success.store(response.success.load());
+    //mailbox->responses[idx].success = response.success;
+    mailbox->responses[idx].ready.test_and_set();
     
     // Notify the client
-    mailbox->responses[idx].ready.test_and_set();
-    //mailbox->responses[idx].rlock.unlock();
-    mailbox->responses[idx].mutex.unlock();
-    mailbox->responses[idx].ready.notify_one();
-
-    //mailbox->msgs[idx] = response;
-    //response.ready.store(true);
-    // Update the old slot with the response
-    //mailbox->msgs[static_cast<size_t>(idx)] = std::move(response);
-    //mailbox->msgs[static_cast<size_t>(idx)] = response;
-    
-    //mailbox->msgs[static_cast<size_t>(idx)].mode = Message::RESPONSE;
-    //mailbox->msgs[static_cast<size_t>(idx)].key = std::move(response.key);
-    //mailbox->msgs[static_cast<size_t>(idx)].data = std::move(response.data);
-    //mailbox->msgs[static_cast<size_t>(idx)].success.store(response.success.load());
-    //mailbox->msgs[static_cast<size_t>(idx)].ready.store(response.ready.load());
-    //mailbox->msgs[static_cast<size_t>(idx)].ready.notify_one();
-
-    //mailbox->msgs.update(static_cast<size_t>(idx), response);
-    
-    // Write back the message
-    //mailbox->msgs[static_cast<size_t>(idx)] = response;
-
-    //response.ready.notify_all();
-    //mailbox->msgs[static_cast<size_t>(idx)].ready.notify_all();
+    if((errno = pthread_cond_signal(&(mailbox->rcvs[idx]))) != 0) {
+        std::perror("CountingSemaphore::post(): pthread_cond_signal()");
+        std::exit(-1);
+    }
+    mailbox->mutexes[idx].unlock();
 }
 
 int main(int argc, char* argv[]) {

@@ -96,20 +96,44 @@ Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const 
     // If there is no wait, some messages seem to be "ignored"...
     //std::this_thread::sleep_for(1ms);
     Message ret{};
+    //return ret;
 
-    if(!mailbox->responses[idx].ready.test())
-        mailbox->responses[idx].ready.wait(false);
+    //mailbox->responses[idx].sema.wait();
+    //if(!mailbox->responses[idx].ready.test())
+    //    mailbox->responses[idx].ready.wait(false);
     //mailbox->responses[idx].rlock.lock();
-    mailbox->responses[idx].mutex.lock();
-    ret = mailbox->responses[idx];
+    //mailbox->responses[idx].mutex.lock();
+    mailbox->mutexes[idx].lock();
+    // ready must be true here, wait for that condition
+    while(!mailbox->responses[idx].ready.test()) {
+        if((errno = pthread_cond_wait(&(mailbox->rcvs[idx]), mailbox->mutexes[idx].getHandle())) != 0) {
+            std::perror("client.cpp: pthread_cond_signal()");
+            std::exit(-1);
+        }
+    }
+    //ret = mailbox->responses[idx];
+    //ret = mailbox->responses.at(idx);
+    ret.mode = Message::RESPONSE;
+    //ret.success = mailbox->responses[idx].success;
+    ret.success.store(mailbox->responses[idx].success.load());
+    ret.key = mailbox->responses[idx].key;
+    ret.data = mailbox->responses[idx].data;
+    //if(ret.success.load() == false)
+    //if(ret.success == false)
+    //    std::cout << "success == false" << std::endl;
 
     // Reset ready flag in order to notify a potentially waiting server thread
     // which wants to reuse the slot for another response
-    //mailbox->responses[idx].ready.test_and_set();
+    //mailbox->responses[idx].success.store(false);
+    mailbox->responses[idx].success = false;
     mailbox->responses[idx].ready.clear();
-    //mailbox->responses[idx].rlock.unlock();
-    mailbox->responses[idx].mutex.unlock();
-    mailbox->responses[idx].ready.notify_all();
+    if((errno = pthread_cond_signal(&(mailbox->rcvs[idx]))) != 0) {
+        std::perror("CountingSemaphore::post(): pthread_cond_signal()");
+        std::exit(-1);
+    }
+    mailbox->mutexes[idx].unlock();
+    //mailbox->responses[idx].ready.notify_all();
+    //mailbox->responses[idx].sema.post();
 
     return ret;
     //Message::mode_t m{Message::DEFAULT};
@@ -118,7 +142,7 @@ Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const 
     while(mailbox->msgs[idx].mode != Message::RESPONSE) {
 
     }
-    mailbox->msgs[idx].ready.wait(false);
+    //mailbox->msgs[idx].ready.wait(false);
     //while(!mailbox->msgs[idx].ready.load()) {
 
     //}
@@ -255,15 +279,15 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
             } else {
                 throw std::invalid_argument("the first argument must be either GET, INSERT, READ_BUCKET or DELETE");            
             }
-        } catch(std::invalid_argument e) {
+        } catch(std::invalid_argument& e) {
             std::cerr << e.what() << std::endl;
             continue;
         }
         // Print out the response
         if(input[0] == "get") {
                 std::cout << "GET " << input[1];
-                //if(response.success) {
-                if(response.success.load()) {
+                if(response.success) {
+                //if(response.success.load()) {
                     std::cout << " -> " << uint8_to_string(response.data.data(), response.data.size()) << " succeeded";
                 } else {
                     std::cout << " failed";
@@ -271,8 +295,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
                 std::cout << std::endl;
         } else if(input[0] == "insert") {
                 std::cout << "INSERT " << input[1] << " -> " << input[2];
-                //if(response.success) {
-                if(response.success.load()) {
+                if(response.success) {
+                //if(response.success.load()) {
                     std::cout << " succeeded";
                 } else {
                     std::cout << " failed";
@@ -280,8 +304,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
                 std::cout << std::endl;
         } else if(input[0] == "delete") {
                 std::cout << "DELETE " << input[1];
-                //if(response.success) {
-                if(response.success.load()) {
+                if(response.success) {
+                //if(response.success.load()) {
                     std::cout << " -> " << uint8_to_string(response.data.data(), response.data.size()) << " succeeded";
                 } else {
                     std::cout << " failed";

@@ -141,8 +141,8 @@ class CircularBuffer {
                 }
                 _headIdx = (_headIdx + 1) % _capacity;
                 //_mutex.unlock();
-                unsigned int fullVal = _fullSlots.current_value();
-                unsigned int openVal = _openSlots.current_value();
+                //unsigned int fullVal = _fullSlots.current_value();
+                //unsigned int openVal = _openSlots.current_value();
                 //std::cout << "fullVal: " << fullVal << "; openVal: " << openVal << std::endl;
                 _pmutex.unlock();
             }
@@ -185,8 +185,8 @@ class CircularBuffer {
                 //_tailIdx %= _capacity;
                 _tailIdx = (_tailIdx + 1) % _capacity;
                 //_mutex.unlock();
-                unsigned int fullVal = _fullSlots.current_value();
-                unsigned int openVal = _openSlots.current_value();
+                //unsigned int fullVal = _fullSlots.current_value();
+                //unsigned int openVal = _openSlots.current_value();
                 //std::cout << "fullVal: " << fullVal << "; openVal: " << openVal << std::endl;
                 _pmutex.unlock();
             }
