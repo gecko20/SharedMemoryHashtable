@@ -91,7 +91,26 @@ Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const 
     }
 
     // Wait for a response TODO
+    // Somewhere here (or rather later in the client) or in the server is some kind of race condition
+    // preventing some messages to be processed cleanly
+    // If there is no wait, some messages seem to be "ignored"...
+    //std::this_thread::sleep_for(1ms);
     Message ret{};
+
+    if(!mailbox->responses[idx].ready.test())
+        mailbox->responses[idx].ready.wait(false);
+    //mailbox->responses[idx].rlock.lock();
+    mailbox->responses[idx].mutex.lock();
+    ret = mailbox->responses[idx];
+
+    // Reset ready flag in order to notify a potentially waiting server thread
+    // which wants to reuse the slot for another response
+    //mailbox->responses[idx].ready.test_and_set();
+    mailbox->responses[idx].ready.clear();
+    //mailbox->responses[idx].rlock.unlock();
+    mailbox->responses[idx].mutex.unlock();
+    mailbox->responses[idx].ready.notify_all();
+
     return ret;
     //Message::mode_t m{Message::DEFAULT};
     // Wait for the response to be marked as ready
@@ -116,10 +135,10 @@ Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const 
 //    }
     //mailbox->msgs.lock(); 
 //    try {
-    {
-        std::lock_guard<Spinlock> lock(mailbox->msgs[idx].rlock);
-    ret = mailbox->msgs[idx];
-    }
+//    {
+//        std::lock_guard<Spinlock> lock(mailbox->msgs[idx].rlock);
+//    ret = mailbox->msgs[idx];
+//    }
 //            } catch(std::out_of_range& e) {
 //                //std::cerr << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
 //                std::cout << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
@@ -132,16 +151,17 @@ Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const 
     //mailbox->msgs.unlock();
 
     // Reset the response's slot
-    {
-        std::lock_guard<Spinlock> lock(mailbox->msgs[idx].rlock);
-    mailbox->msgs[idx].mode = Message::DEFAULT;
-    mailbox->msgs[idx].ready.store(false);
-    mailbox->msgs[idx].ready.notify_all();
-    }
+//    {
+//        std::lock_guard<Spinlock> lock(mailbox->msgs[idx].rlock);
+//    mailbox->msgs[idx].mode = Message::DEFAULT;
+//    mailbox->msgs[idx].ready.store(false);
+//    mailbox->msgs[idx].ready.notify_all();
+//    }
     return ret;
 }
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
+    std::ios_base::sync_with_stdio(false);
     std::cout << "Hello from the client!" << std::endl;
     
     // The name associated with the shared memory object

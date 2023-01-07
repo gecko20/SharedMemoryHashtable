@@ -15,7 +15,7 @@
 #define MAX_LENGTH_VAL 1024
 
 //constexpr const size_t slots = 10;
-constexpr const size_t slots = 2;
+constexpr const size_t slots = 10;
 
 /**
  * Simple spinlock protecting reading accesses on single Messages
@@ -69,7 +69,9 @@ typedef struct Message {
     //uint8_t data[MAX_LENGTH_VAL];
     //bool success;
     std::atomic<bool> success;
-    std::atomic<bool> ready;
+    std::atomic_flag ready;
+    PMutex mutex; // Used for locking responses
+    //std::atomic<bool> ready;
     Spinlock rlock;
     std::array<uint8_t, MAX_LENGTH_KEY> key;
     std::array<uint8_t, MAX_LENGTH_VAL> data;
@@ -79,17 +81,25 @@ typedef struct Message {
     Message() : mode(Message::DEFAULT),
                 success(false),
                 ready(false),
+                mutex(),
                 key({}),
                 data({}) {
         //std::atomic_init(&read, false);
     }
+
+    Message(mode_t m) : mode(m),
+                        success(false),
+                        ready(false),
+                        mutex(PMutex()),
+                        key({}),
+                        data({}) { }
 
     Message(Message& other) : mode(other.mode),
                                         //mode(other.mode.load()),
                                         //read(other.read.load()),
                                         //success(false),
                                         success(other.success.load()),
-                                        ready(other.ready.load()),
+                                        ready(other.ready.test()),
                                         key(other.key),
                                         data(other.data) { }
 
@@ -98,7 +108,7 @@ typedef struct Message {
                                          //read(other.read.load(std::memory_order_seq_cst)),
                                          //success(false),
                                          success(other.success.load()),
-                                         ready(other.ready.load()),
+                                         ready(other.ready.test()),
                                          key(std::move(other.key)),
                                          data(std::move(other.data)) { }
 
@@ -111,7 +121,12 @@ typedef struct Message {
         //data = other.data;
         //success = other.success;
         success.store(other.success.load());
-        ready.store(other.ready.load());
+        //ready.store(other.ready.load());
+        if(other.ready.test()) {
+            ready.test_and_set();
+        } else {
+            ready.clear();
+        }
         std::copy(other.key.begin(), other.key.end(), key.begin());
         std::copy(other.data.begin(), other.data.end(), data.begin());
         return *this;
@@ -122,7 +137,12 @@ typedef struct Message {
         //read = other.read.load(std::memory_order_seq_cst);
         //success = std::move(other.success);
         success.store(other.success.load());
-        ready.store(other.ready.load());
+        //ready.store(other.ready.load());
+        if(other.ready.test()) {
+            ready.test_and_set();
+        } else {
+            ready.clear();
+        }
         key  = std::move(other.key);
         data = std::move(other.data);
         return *this;
@@ -132,7 +152,9 @@ typedef struct Message {
 template <size_t slots = 10>
 //typedef struct Mailbox {
 struct Mailbox {
-    Mailbox() : msgs(CircularBuffer<Message, slots>{}) {};
+    Mailbox() : msgs(CircularBuffer<Message, slots>{}), responses() {
+        responses.fill(Message(Message::RESPONSE));
+    };
 
     //Mailbox& operator=(const Mailbox& other) {
     //    msgs = other.msgs;
@@ -144,7 +166,13 @@ struct Mailbox {
     //    return *this;
     //}
 
+    // Stores all requests by clients
     CircularBuffer<Message, slots> msgs;
+
+    // Stores all responds by the server
+    // Messages here all have mode == Message::RESPONSE
+    // and should never be replaced, only modified
+    std::array<Message, slots> responses;
 }; // Mailbox;
 
 //typedef struct MMap {

@@ -143,7 +143,7 @@ class CircularBuffer {
                 //_mutex.unlock();
                 unsigned int fullVal = _fullSlots.current_value();
                 unsigned int openVal = _openSlots.current_value();
-                std::cout << "fullVal: " << fullVal << "; openVal: " << openVal << std::endl;
+                //std::cout << "fullVal: " << fullVal << "; openVal: " << openVal << std::endl;
                 _pmutex.unlock();
             }
             //_openSlots.release();
@@ -187,7 +187,7 @@ class CircularBuffer {
                 //_mutex.unlock();
                 unsigned int fullVal = _fullSlots.current_value();
                 unsigned int openVal = _openSlots.current_value();
-                std::cout << "fullVal: " << fullVal << "; openVal: " << openVal << std::endl;
+                //std::cout << "fullVal: " << fullVal << "; openVal: " << openVal << std::endl;
                 _pmutex.unlock();
             }
             //_fullSlots.release();
@@ -218,7 +218,7 @@ class CircularBuffer {
         //}
 
 
-        /*inline*/ bool isEmpty() const {
+        inline bool isEmpty() const {
             //std::lock_guard<std::mutex> lock(_mutex);
             _pmutex.lock();
             bool ret = _size == 0;
@@ -230,7 +230,7 @@ class CircularBuffer {
             return ret;
         }
 
-        /*inline*/ bool isFull() const {
+        inline bool isFull() const {
             //std::lock_guard<std::mutex> lock(_mutex);
             _pmutex.lock();
             bool ret = _size == _capacity;

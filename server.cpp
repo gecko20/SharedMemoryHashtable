@@ -238,9 +238,26 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
             return;
             break;
     }
-    // Write the response in the request's slot
+
+    // Wait for the response's slot to be ready to be written to
+    // which is the case if the ready flag is false
+    //if(mailbox->responses[idx].ready.test())
+    //    mailbox->responses[idx].ready.wait(true);
+    //mailbox->responses[idx].rlock.lock();
+    mailbox->responses[idx].mutex.lock();
+    // Write the response in the request's slot in the responses' array
+    mailbox->responses[idx].key  = response.key;
+    mailbox->responses[idx].data = response.data;
+    mailbox->responses[idx].success.store(response.success.load());
+    
+    // Notify the client
+    mailbox->responses[idx].ready.test_and_set();
+    //mailbox->responses[idx].rlock.unlock();
+    mailbox->responses[idx].mutex.unlock();
+    mailbox->responses[idx].ready.notify_one();
+
     //mailbox->msgs[idx] = response;
-    response.ready.store(true);
+    //response.ready.store(true);
     // Update the old slot with the response
     //mailbox->msgs[static_cast<size_t>(idx)] = std::move(response);
     //mailbox->msgs[static_cast<size_t>(idx)] = response;
@@ -253,7 +270,9 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
     //mailbox->msgs[static_cast<size_t>(idx)].ready.notify_one();
 
     //mailbox->msgs.update(static_cast<size_t>(idx), response);
-    mailbox->msgs[static_cast<size_t>(idx)] = response;
+    
+    // Write back the message
+    //mailbox->msgs[static_cast<size_t>(idx)] = response;
 
     //response.ready.notify_all();
     //mailbox->msgs[static_cast<size_t>(idx)].ready.notify_all();
@@ -358,8 +377,8 @@ int main(int argc, char* argv[]) {
         //table->print_table();
         std::cout << "Size: " << table->size() << "; Capacity: " << table->capacity() << "; Load Factor: " << table->load_factor() << std::endl;
         std::cout << "---------------" << std::endl;
+        std::this_thread::sleep_for(2s);
     }
-
     // Signal the threads to return
     Message exit_msg{};
     exit_msg.mode = Message::EXIT;
