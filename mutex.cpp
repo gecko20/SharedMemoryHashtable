@@ -193,6 +193,6 @@ unsigned int CountingSemaphore::current_value() {
         std::perror("CountingSemaphore::current_value(): sem_getValue()");
         std::exit(-1);
     }
-    return val;
+    return static_cast<unsigned int>(val);
 #endif
 }

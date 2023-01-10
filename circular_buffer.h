@@ -139,11 +139,16 @@ class CircularBuffer {
                     std::cout << "idx = " << idx << std::endl;
                     std::exit(-1);
                 }
+                // Empty slot TODO: Needed? Slows down the program a lot
+                //_buffer[_headIdx] = T{};
+
                 _headIdx = (_headIdx + 1) % _capacity;
                 //_mutex.unlock();
                 //unsigned int fullVal = _fullSlots.current_value();
                 //unsigned int openVal = _openSlots.current_value();
                 //std::cout << "fullVal: " << fullVal << "; openVal: " << openVal << std::endl;
+
+
                 _pmutex.unlock();
             }
             //_openSlots.release();

@@ -17,7 +17,7 @@
 #define MAX_LENGTH_VAL 1024
 
 //constexpr const size_t slots = 10;
-constexpr const size_t slots = 10;
+constexpr const size_t slots = 12;
 
 
 /**
@@ -42,9 +42,11 @@ typedef struct Message {
     }; //mode;
 
     mode_t mode;
-    std::atomic<bool> success;
+    //std::atomic<bool> success;
+    bool success;
     //bool success;
     std::atomic_flag ready;
+    std::atomic<pid_t> client_id;
     //std::atomic<bool> ready;
     std::array<uint8_t, MAX_LENGTH_KEY> key;
     std::array<uint8_t, MAX_LENGTH_VAL> data;
@@ -53,6 +55,7 @@ typedef struct Message {
     Message() : mode(Message::DEFAULT),
                 success(false),
                 ready(false),
+                client_id(0),
                 key({}),
                 data({}) {
         //std::atomic_init(&read, false);
@@ -61,6 +64,7 @@ typedef struct Message {
     Message(mode_t m) : mode(m),
                         success(false),
                         ready(false),
+                        client_id(0),
                         key({}),
                         data({}) { }
 
@@ -68,9 +72,10 @@ typedef struct Message {
                                         //mode(other.mode.load()),
                                         //read(other.read.load()),
                                         //success(false),
-                                        success(other.success.load()),
-                                        //success(other.success),
+                                        //success(other.success.load()),
+                                        success(other.success),
                                         ready(other.ready.test()),
+                                        client_id(other.client_id.load()),
                                         key(other.key),
                                         data(other.data) { }
 
@@ -78,16 +83,17 @@ typedef struct Message {
                                          //mode(other.mode.load()),
                                          //read(other.read.load(std::memory_order_seq_cst)),
                                          //success(false),
-                                         success(other.success.load()),
-                                         //success(other.success),
+                                         //success(other.success.load()),
+                                         success(other.success),
                                          ready(other.ready.test()),
+                                         client_id(other.client_id.load()),
                                          key(std::move(other.key)),
                                          data(std::move(other.data)) { }
 
     Message& operator=(const Message& other) {
         mode = other.mode;
-        //success = other.success;
-        success.store(other.success.load());
+        success = other.success;
+        //success.store(other.success.load());
         //success = other.success;
         //ready.store(other.ready.load());
         if(other.ready.test()) {
@@ -95,14 +101,15 @@ typedef struct Message {
         } else {
             ready.clear();
         }
+        client_id = other.client_id.load();
         std::copy(other.key.begin(), other.key.end(), key.begin());
         std::copy(other.data.begin(), other.data.end(), data.begin());
         return *this;
     }
     Message& operator=(Message&& other) {
         mode = std::move(other.mode);
-        //success = std::move(other.success);
-        success.store(other.success.load());
+        success = std::move(other.success);
+        //success.store(other.success.load());
         //success = other.success;
         //ready.store(other.ready.load());
         if(other.ready.test()) {
@@ -110,6 +117,7 @@ typedef struct Message {
         } else {
             ready.clear();
         }
+        client_id = other.client_id.load();
         key  = std::move(other.key);
         data = std::move(other.data);
         return *this;

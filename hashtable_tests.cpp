@@ -1,9 +1,12 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <unordered_map> // for hashing std::string
 #include <string>
+#include <thread>
 #include "doctest.h"
 #include "hashtable.h"
 #include "circular_buffer.h"
+
+#include <optional>
 
 //int factorial(int number) { return number <= 1 ? number : factorial(number - 1) * number; }
 //
@@ -15,7 +18,7 @@
 //}
 
 TEST_CASE("adding new elements to HashTable") {
-    HashTable<std::string, int> table{5};
+    HashTable<std::string, int> table{5, false};
 
     REQUIRE(table.size() == 0);
     REQUIRE(table.capacity() >= 5);
@@ -59,7 +62,8 @@ TEST_CASE("adding new elements to HashTable") {
         }
 
         REQUIRE(table.size() == 5);
-        REQUIRE(table.capacity() > 5);
+        if(table.isResizable())
+            REQUIRE(table.capacity() > 5);
 
         auto elem = table.get("2");
         REQUIRE(elem.has_value() == true);
@@ -84,7 +88,7 @@ TEST_CASE("adding new elements to HashTable") {
 }
 
 TEST_CASE("removing elements from the HashTable") {
-    HashTable<int, int> table{10};
+    HashTable<int, int> table{10, false};
     
     for(size_t i = 0; i < 3; ++i) {
         if(i != 2)
@@ -115,7 +119,84 @@ TEST_CASE("removing elements from the HashTable") {
         REQUIRE(elem2.has_value() == false);
         REQUIRE(table.size() == 2);
 
-        REQUIRE(table.capacity() == (10 / SHRINK_FACTOR));
+        if(table.isResizable())
+            REQUIRE(table.capacity() == (10 / SHRINK_FACTOR));
+    }
+}
+
+TEST_CASE("stress tests") {
+    const size_t slots = 12;
+    //HashTable<int, int> table{10, false};
+    HashTable<int, int> table{slots * 100000, false};
+
+    SUBCASE("parallel access with different keys/values for each thread") {
+        std::array<std::thread, slots> threads{};
+
+        auto f = [&table](int x) { 
+            bool               insRes;
+            std::optional<int> remRes;
+            std::optional<int> getRes;
+            //std::optional<int> getRes;
+            //$((1 + 100000*$i)) $(( 100000 + 100000*$i)))
+            for(int i = 1 + 100000 * x; i <= 100000 + 100000*x; ++i) {
+                getRes = table.get(i);
+                REQUIRE(getRes.has_value() == false);
+                insRes = table.insert(i, i);
+                CHECK(insRes == true);
+                insRes = table.insert(i, i);
+                CHECK(insRes == false);
+                getRes = table.get(i);
+                REQUIRE(getRes.has_value() == true);
+                CHECK(*getRes == i);
+                remRes = table.remove(i);
+                getRes = table.get(i);
+                REQUIRE(getRes.has_value() == false);
+
+                CHECK(remRes.has_value() == true);
+            }
+        };
+    
+        for(size_t i = 0; i < slots; ++i) {
+            threads[i] = std::thread{f, i};
+        }
+
+        for(auto& t : threads) {
+            t.join();
+        }
+
+        table.print_table();
+        REQUIRE(table.size() == 0);
+    }
+
+    SUBCASE("parallel access with same keys/values for each thread") {
+        std::array<std::thread, slots> threads{};
+
+        auto f = [&table]() { 
+            bool               insRes;
+            std::optional<int> remRes;
+            std::optional<int> getRes;
+            //std::optional<int> getRes;
+            //$((1 + 100000*$i)) $(( 100000 + 100000*$i)))
+            for(int i = 1; i <= 100000; ++i) {
+                getRes = table.get(i);
+                insRes = table.insert(i, i);
+                getRes = table[i];
+                remRes = table.remove(i);
+                getRes = table.get(i);
+            }
+        };
+    
+        for(size_t i = 0; i < slots; ++i) {
+            threads[i] = std::thread{f};
+        }
+
+        for(auto& t : threads) {
+            t.join();
+        }
+
+        table.print_table();
+        REQUIRE(table.size() == 0);
+
     }
 }
 

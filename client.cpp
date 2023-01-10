@@ -5,6 +5,7 @@
 #include <csignal>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <fcntl.h>
 #include <stdio.h>
@@ -12,6 +13,7 @@
 #include <sys/shm.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+//#include <sys/types.h>
 #include "client.h"
 #include "message.h"
 //#include "hashtable.h"
@@ -25,6 +27,8 @@
     #define MAP_HASSEMAPHORE 0
 #endif
 
+static_assert(std::atomic<pid_t>::is_always_lock_free, "atomic<pid_t> is not always lock free and can't be used in shared memory");
+
 /**
  * An example client storing C-style strings in a HashTable managed by
  * the example server using C-style strings as keys.
@@ -32,6 +36,8 @@
 using namespace std::chrono_literals;
 
 bool running = true;
+pid_t client_id;
+std::mutex cout_lock;
 void signal_handler([[maybe_unused]] int signal) {
     running = false;
 }
@@ -49,26 +55,27 @@ std::string uint8_to_string(const uint8_t* v, const size_t len) {
 Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const char* key, const char* value) {
 //Message sendMsg(Mailbox* mailbox, const enum Message::mode_t mode, const char* key, const char* value) {
     Message msg{};
+    msg.client_id.store(client_id);
 
     // Prepare the message
     switch(mode) {
         case Message::GET:
             msg.mode = Message::GET;
-            memcpy(msg.key.data(), key, strlen(key));
+            memcpy(msg.key.data(), key, strlen(key) + 1);
             break;
         case Message::INSERT:
             msg.mode = Message::INSERT;
-            memcpy(msg.key.data(), key, strlen(key));
-            memcpy(msg.data.data(), value, strlen(value));
+            memcpy(msg.key.data(), key, strlen(key) + 1);
+            memcpy(msg.data.data(), value, strlen(value) + 1);
             break;
         case Message::READ_BUCKET:
             msg.mode = Message::READ_BUCKET;
             // Key is interpreted as the bucket's index in this case
-            memcpy(msg.key.data(), key, strlen(key));
+            memcpy(msg.key.data(), key, strlen(key) + 1);
             break;
         case Message::DELETE:
             msg.mode = Message::DELETE;
-            memcpy(msg.key.data(), key, strlen(key));
+            memcpy(msg.key.data(), key, strlen(key) + 1);
             break;
         case Message::EXIT:
             running = false;
@@ -78,115 +85,60 @@ Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const 
             break;
     }
     // Send the message
-    // TODO: Check for return value of -1
-    size_t idx;
+    size_t idx = static_cast<size_t>(-1);
     //idx = static_cast<size_t>(mailbox->msgs.push_back(std::move(msg)));
-    idx = static_cast<size_t>(mailbox->msgs.push_back(msg)); // TODO: Maybe return a condition variable to check on, too?
+    idx = static_cast<size_t>(mailbox->msgs.push_back(msg));
     while(idx == static_cast<size_t>(-1)) {
         // push_back failed due to the Message buffer being full, wait and try again
-        std::cout << "push_back() failed: Message buffer full" << std::endl;
+        //std::cout << "push_back() failed: Message buffer full" << std::endl;
         
-        std::this_thread::sleep_for(5ms);
+        std::this_thread::sleep_for(15ms);
         idx = static_cast<size_t>(mailbox->msgs.push_back(msg));
     }
 
-    // Wait for a response TODO
-    // Somewhere here (or rather later in the client) or in the server is some kind of race condition
-    // preventing some messages to be processed cleanly
-    // If there is no wait, some messages seem to be "ignored"...
-    //std::this_thread::sleep_for(1ms);
+    // Wait for a response
     Message ret{};
     //return ret;
 
-    //mailbox->responses[idx].sema.wait();
-    //if(!mailbox->responses[idx].ready.test())
-    //    mailbox->responses[idx].ready.wait(false);
-    //mailbox->responses[idx].rlock.lock();
-    //mailbox->responses[idx].mutex.lock();
     mailbox->mutexes[idx].lock();
     // ready must be true here, wait for that condition
-    while(!mailbox->responses[idx].ready.test()) {
+    // AND: pid must be equal to the client's pid, so it knows
+    // that this response is meant for it, not for some other client
+    while(!mailbox->responses[idx].ready.test() || mailbox->responses[idx].client_id != client_id) {
         if((errno = pthread_cond_wait(&(mailbox->rcvs[idx]), mailbox->mutexes[idx].getHandle())) != 0) {
-            std::perror("client.cpp: pthread_cond_signal()");
+            std::perror("client.cpp: pthread_cond_wait()");
             std::exit(-1);
         }
     }
-    //ret = mailbox->responses[idx];
-    //ret = mailbox->responses.at(idx);
     ret.mode = Message::RESPONSE;
-    //ret.success = mailbox->responses[idx].success;
-    ret.success.store(mailbox->responses[idx].success.load());
+    ret.success = mailbox->responses[idx].success;
     ret.key = mailbox->responses[idx].key;
     ret.data = mailbox->responses[idx].data;
-    //if(ret.success.load() == false)
-    //if(ret.success == false)
-    //    std::cout << "success == false" << std::endl;
 
     // Reset ready flag in order to notify a potentially waiting server thread
     // which wants to reuse the slot for another response
+    // Also reset the response's PID to 0 so the server knows it is allowed to
+    // reuse the slot
     //mailbox->responses[idx].success.store(false);
-    mailbox->responses[idx].success = false;
+    //mailbox->responses[idx].success = false;
     mailbox->responses[idx].ready.clear();
+    mailbox->responses[idx].client_id.store(0);
+    // Notify the server
     if((errno = pthread_cond_signal(&(mailbox->rcvs[idx]))) != 0) {
-        std::perror("CountingSemaphore::post(): pthread_cond_signal()");
+    //if((errno = pthread_cond_broadcast(&(mailbox->rcvs[idx]))) != 0) {
+        std::perror("client.cpp: pthread_cond_signal()");
         std::exit(-1);
     }
     mailbox->mutexes[idx].unlock();
-    //mailbox->responses[idx].ready.notify_all();
-    //mailbox->responses[idx].sema.post();
 
-    return ret;
-    //Message::mode_t m{Message::DEFAULT};
-    // Wait for the response to be marked as ready
-    //mailbox->msgs[idx].ready.wait(false);
-    while(mailbox->msgs[idx].mode != Message::RESPONSE) {
-
-    }
-    //mailbox->msgs[idx].ready.wait(false);
-    //while(!mailbox->msgs[idx].ready.load()) {
-
-    //}
-
-    //while(mailbox->msgs[idx].mode != Message::RESPONSE) {
-//    while(m != Message::RESPONSE) {
-//        //std::cout << "Waiting..." << std::endl;
-//        try {
-//            m = mailbox->msgs[idx].mode;
-//        } catch(std::out_of_range& e) {
-//            //std::cerr << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
-//            std::cout << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
-//        }
-//    }
-    //mailbox->msgs.lock(); 
-//    try {
-//    {
-//        std::lock_guard<Spinlock> lock(mailbox->msgs[idx].rlock);
-//    ret = mailbox->msgs[idx];
-//    }
-//            } catch(std::out_of_range& e) {
-//                //std::cerr << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
-//                std::cout << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
-//            }
-    //mailbox->msgs[idx].read.store(true);
-    //mailbox->msgs[idx].read.notify_all();
-    //mailbox->msgs.getPtr(idx)->read.store(true);
-    //mailbox->msgs.getPtr(idx)->read.notify_all();
-
-    //mailbox->msgs.unlock();
-
-    // Reset the response's slot
-//    {
-//        std::lock_guard<Spinlock> lock(mailbox->msgs[idx].rlock);
-//    mailbox->msgs[idx].mode = Message::DEFAULT;
-//    mailbox->msgs[idx].ready.store(false);
-//    mailbox->msgs[idx].ready.notify_all();
-//    }
     return ret;
 }
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
-    std::ios_base::sync_with_stdio(false);
+    //std::ios_base::sync_with_stdio(false);
     std::cout << "Hello from the client!" << std::endl;
+
+    client_id = getpid();
     
     // The name associated with the shared memory object
     const char* name = "/shm_ipc";
@@ -227,9 +179,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     Mailbox<slots>* mailbox_ptr = &(shared_mem->mailbox);
 
     std::signal(SIGINT, signal_handler);
-    Message response{};
+    //Message response{};
+    Message response;
     // Main loop
     do {
+        response = Message();
         std::vector<std::string> input{};
         std::string raw_input;
         std::getline(std::cin, raw_input);
@@ -284,6 +238,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
             continue;
         }
         // Print out the response
+        {
+        std::scoped_lock lock(cout_lock);
         if(input[0] == "get") {
                 std::cout << "GET " << input[1];
                 if(response.success) {
@@ -315,6 +271,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
                 // TODO
         } else {
             // default
+        }
         }
 
     } while(running);

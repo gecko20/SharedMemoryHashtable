@@ -4,6 +4,7 @@
 #include <sys/shm.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/types.h>
 #include <chrono>
 #include <csignal>
 #include <cstring>
@@ -27,6 +28,8 @@
 #if defined(__linux__)
     #define MAP_HASSEMAPHORE 0
 #endif
+
+static_assert(std::atomic<pid_t>::is_always_lock_free, "atomic<pid_t> is not always lock free and can't be used in shared memory");
 
 using namespace std::chrono_literals;
 
@@ -64,7 +67,7 @@ std::string uint8_to_string(const uint8_t* v, const size_t len) {
 }
 
 std::ostream& operator<<(std::ostream& output, const Message& other) {
-    output << "Message ";
+    //output << "Message ";
     switch(other.mode) {
     //switch(other.mode.load()) {
         case Message::GET:
@@ -91,7 +94,9 @@ std::ostream& operator<<(std::ostream& output, const Message& other) {
     output << uint8_to_hex_string(other.key.data(), other.key.size());
     output << " DataLength: " << other.data.size() << " Data (Hex): ";
     output << uint8_to_hex_string(other.data.data(), other.data.size());
-    //output << " Read: " << other.read.load();
+    output << " PID: " << other.client_id;
+    output << " Success: " << other.success;
+    output << " Ready: " << other.ready.test();
     output << std::endl;
 
     return output;
@@ -111,7 +116,7 @@ void receiveMsg(Mailbox<slots>* mailbox) {
             if(msg.mode == Message::EXIT)
                 break;
 
-            respond(mailbox, static_cast<int>(idx), msg);
+            respond(mailbox, idx, msg);
 
             //{
             //    std::scoped_lock<std::mutex> lock(cout_lock);
@@ -121,10 +126,11 @@ void receiveMsg(Mailbox<slots>* mailbox) {
     }
 }
 
-void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
+void respond(Mailbox<slots>* mailbox, size_t idx, Message msg) {
     // TODO Check for malformed requests
     Message response{};
     response.mode = Message::RESPONSE;
+    response.client_id.store(msg.client_id.load());
     response.key = msg.key;
 
     switch(msg.mode) {
@@ -132,11 +138,8 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
             auto result = table->get(uint8_to_string(msg.key.data(), msg.key.size()));
             if(result) {
                 auto& value = *result;
+                memcpy(response.data.data(), value.c_str(), strlen(value.c_str()) + 1);
                 response.success = true;
-                //response.success.store(true);
-                //response.data_length = value.length(); //+ 1;
-                //memcpy(response.data.data(), value.c_str(), value.length());
-                memcpy(response.data.data(), value.c_str(), strlen(value.c_str()));
 
                 //{
                 //    std::scoped_lock<std::mutex> lock(cout_lock);
@@ -144,9 +147,8 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
                 //}
             } else {
                 // Entry was not found in the HashTable
-                //response.data_length = 0;
+                response.data[0] = 0;
                 response.success = false;
-                //response.success.store(false);
                 //{
                 //    std::scoped_lock<std::mutex> lock(cout_lock);
                 //    std::cout << "GET: did not find key " << uint8_to_string(response.key.data(), response.key.size()) << " in the HT!" << std::endl;
@@ -157,12 +159,11 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
         case Message::INSERT: {
             bool result = table->insert(uint8_to_string(msg.key.data(), msg.key.size()), uint8_to_string(msg.data.data(), msg.data.size()));
             if(result) {
-                response.success = true;
-                //response.success.store(true);
                 memcpy(response.data.data(), &result, sizeof(bool));
+                response.success = true;
             } else {
+                response.data[0] = 0;
                 response.success = false;
-                //response.success.store(false);
                 //{
                 //    std::scoped_lock<std::mutex> lock(cout_lock);
                 //    //std::cout << "INSERT: returned from HashTable: " << uint8_to_string(response.data.data(), response.data.size()) << std::endl;
@@ -178,9 +179,8 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
             auto result = table->remove(uint8_to_string(msg.key.data(), msg.key.size()));
             if(result) {
                 auto& value = *result;
+                memcpy(response.data.data(), value.c_str(), strlen(value.c_str()) + 1);
                 response.success = true;
-                //response.success.store(true);
-                memcpy(response.data.data(), value.c_str(), strlen(value.c_str()));
 
                 //{
                 //    std::scoped_lock<std::mutex> lock(cout_lock);
@@ -188,8 +188,8 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
                 //}
             } else {
                 // Entry was not found in the HashTable
+                response.data[0] = 0;
                 response.success = false;
-                //response.success.store(false);
                 //{
                 //    std::scoped_lock<std::mutex> lock(cout_lock);
                 //    std::cout << "DELETE: did not find key " << uint8_to_string(response.key.data(), response.key.size()) << " in the HT!" << std::endl;
@@ -199,12 +199,12 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
             break;
         case Message::RESPONSE:
             // Should never happen
-            return;
+            //return;
             break;
         default:
             // Should never happen
             std::cout << "default case!" << std::endl;
-            return;
+            //return;
             break;
     }
 
@@ -215,22 +215,24 @@ void respond(Mailbox<slots>* mailbox, int idx, Message msg) {
     // which is the case if the ready flag is false
     //
     // ready must be false here, wait for that condition
-    while(mailbox->responses[idx].ready.test()) {
+    // AND: pid must be 0/false here
+    while(mailbox->responses[idx].ready.test() || mailbox->responses[idx].client_id != 0) {
         if((errno = pthread_cond_wait(&(mailbox->rcvs[idx]), mailbox->mutexes[idx].getHandle())) != 0) {
-            std::perror("client.cpp: pthread_cond_signal()");
+            std::perror("server.cpp: pthread_cond_wait()");
             std::exit(-1);
         }
     }
     // Write the response in the request's slot in the responses' array
     mailbox->responses[idx].key  = response.key;
     mailbox->responses[idx].data = response.data;
-    mailbox->responses[idx].success.store(response.success.load());
-    //mailbox->responses[idx].success = response.success;
+    mailbox->responses[idx].success = response.success;
     mailbox->responses[idx].ready.test_and_set();
+    mailbox->responses[idx].client_id.store(response.client_id.load());
     
-    // Notify the client
-    if((errno = pthread_cond_signal(&(mailbox->rcvs[idx]))) != 0) {
-        std::perror("CountingSemaphore::post(): pthread_cond_signal()");
+    // Notify the client(s)
+    //if((errno = pthread_cond_signal(&(mailbox->rcvs[idx]))) != 0) {
+    if((errno = pthread_cond_broadcast(&(mailbox->rcvs[idx]))) != 0) {
+        std::perror("server.cpp: pthread_cond_signal()");
         std::exit(-1);
     }
     mailbox->mutexes[idx].unlock();
@@ -247,6 +249,8 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
+    // TODO: --resizable flag
+
     size_t tableSize{0};
    
     try {
@@ -256,13 +260,18 @@ int main(int argc, char* argv[]) {
     }
 
     // Our HashTable which is managed by the server
-    table = std::make_unique<HashTable<std::string, std::string>>(tableSize);
+    table = std::make_unique<HashTable<std::string, std::string>>(tableSize, false);
 
     table->insert("test", "hallo");
     (*table)["test"] = "test";
     (*table)["test"] = "hallo";
 
-    table->print_table();
+    //for(size_t i = 100001; i <= 300000; ++i) {
+    //    auto tmp = std::to_string(i);
+    //    table->insert(tmp, tmp);
+    //}
+
+    //table->print_table();
 
     // The name associated with the shared memory object
     const char* name = "/shm_ipc";
@@ -302,6 +311,9 @@ int main(int argc, char* argv[]) {
     //MMap* shared_mem = reinterpret_cast<MMap*>(shared_mem_ptr);
     MMap<slots>* shared_mem = new(shared_mem_ptr) MMap<slots>{}; // Placement new
     //MMap* shared_mem = new(shared_mem_ptr) MMap{slots}; // Placement new
+    //for(int i = 0; i < slots; ++i) {
+    //    std::cout << shared_mem->mailbox.msgs[i] << "\n";
+    //}
 
     // Initialize the shared memory / mailbox
 
@@ -331,11 +343,26 @@ int main(int argc, char* argv[]) {
         std::cout << "CircularBuffer:" << std::endl;
         mailbox_ptr->msgs.printBuffer();
         std::cout << "---------------" << std::endl;
+        std::cout << "Responses:" << std::endl;
+        for(auto& i : mailbox_ptr->responses) {
+            std::cout << i;
+        }
+        std::cout << "---------------" << std::endl;
         std::cout << "HashTable:" << std::endl;
         //table->print_table();
         std::cout << "Size: " << table->size() << "; Capacity: " << table->capacity() << "; Load Factor: " << table->load_factor() << std::endl;
         std::cout << "---------------" << std::endl;
-        std::this_thread::sleep_for(2s);
+        //std::this_thread::sleep_for(2s);
+        
+        // Periodically notify waiting threads since they somehow
+        // seem to sometimes wait on the same condition variable
+        //for(size_t i = 0; i < slots; ++i) {
+        //    //if((errno = pthread_cond_signal(&(mailbox_ptr->rcvs[i]))) != 0) {
+        //    if((errno = pthread_cond_broadcast(&(mailbox_ptr->rcvs[i]))) != 0) {
+        //        std::perror("main(): pthread_cond_signal()");
+        //        std::exit(-1);
+        //    }
+        //}
     }
     // Signal the threads to return
     Message exit_msg{};
@@ -348,6 +375,8 @@ int main(int argc, char* argv[]) {
     for(auto& t : threads) {
         t.join();
     }
+
+    table->print_table();
 
     // Destroy the MMap struct
     shared_mem->~MMap();
