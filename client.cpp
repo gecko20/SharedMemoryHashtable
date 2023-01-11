@@ -124,8 +124,8 @@ Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const 
     mailbox->responses[idx].ready.clear();
     mailbox->responses[idx].client_id.store(0);
     // Notify the server
-    if((errno = pthread_cond_signal(&(mailbox->rcvs[idx]))) != 0) {
-    //if((errno = pthread_cond_broadcast(&(mailbox->rcvs[idx]))) != 0) {
+    //if((errno = pthread_cond_signal(&(mailbox->rcvs[idx]))) != 0) {
+    if((errno = pthread_cond_broadcast(&(mailbox->rcvs[idx]))) != 0) {
         std::perror("client.cpp: pthread_cond_signal()");
         std::exit(-1);
     }
@@ -179,7 +179,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     Mailbox<slots>* mailbox_ptr = &(shared_mem->mailbox);
 
     std::signal(SIGINT, signal_handler);
-    //Message response{};
     Message response;
     // Main loop
     do {

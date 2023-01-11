@@ -1,5 +1,5 @@
 CC := clang++
-CXX_FLAGS := -g -O0 -Wall -Wextra -Wconversion -pedantic -Wfatal-errors -std=c++20
+CXX_FLAGS := -g -O2 -Wall -Wextra -Wconversion -pedantic -Wfatal-errors -std=c++20
 LD_FLAGS := -pthread
 
 # Build directory
@@ -67,7 +67,7 @@ client: client.o client.h mutex.o circular_buffer.o
 test: hashtable.o mutex.o circular_buffer.o hashtable_tests.cpp doctest.h
 	@mkdir -p $(TEST)
 	$(CC) $(CXX_FLAGS) hashtable_tests.cpp -o $(TEST)/$@ $(BUILD)/hashtable.o $(BUILD)/mutex.o $(BUILD)/circular_buffer.o $(LD_FLAGS)
-	./$(TEST)/test
+	./$(TEST)/test -d
 
 run: server client
 	echo "TODO"

@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include <array>
+#include <atomic>
 #include <concepts>
 #include <functional>
 #include <list>
@@ -78,12 +79,13 @@ class HashTable {
          * Initializes a HashTable with default space for 1024 elements
          * which is also resizable.
          */
-        HashTable() : _size(0), _capacity(1024), _resizable(true), _mutex(), _gmutex() {
-            _storage = std::make_unique<Node[]>(1024);
-            //for(size_t i = 0; i < 1024; ++i) {
-            //    _storage[i] = Node();
-            //}
-        }
+        //HashTable() : _size(0), _capacity(1024), _resizable(true), _mutex(), _gmutex() {
+        //HashTable() : _size(0), _capacity(1024), _resizable(true), _mutex() {
+        HashTable() : _size(0),
+                      _capacity(1024),
+                      _resizable(true),
+                      _storage(std::make_unique<Node[]>(1024)),
+                      _mutex() { }
 
         /**
          * Constructor.
@@ -91,11 +93,11 @@ class HashTable {
          *
          * @param cap number of elements the HashTable should have space for after initialization
          */
-        HashTable(size_t cap, bool resizable = false) : _size(0), _capacity(cap), _resizable(resizable), _mutex(), _gmutex() {
+        HashTable(size_t cap, bool resizable = false) : _size(0),
+                                                        _capacity(cap),
+                                                        _resizable(resizable),
+                                                        _mutex() {
             _storage = std::make_unique<Node[]>(cap);
-            //for(size_t i = 0; i < cap; ++i) {
-            //    _storage[i] = Node();
-            //}
         }
 
         /**
@@ -112,15 +114,19 @@ class HashTable {
          * @return True if successful, false otherwise
          */
         bool insert(K key, V value) {
-            if(_size == _capacity)
-                return false;
+            // TODO: Add if constexpr and some template argument controlling
+            // this part
+            // Uncomment if you want the HashTable to allow additional
+            // elements to be added to it if its "capacity" limit is reached.
+            //if(_size == _capacity)
+            //    return false;
             if(get(key))
                 return false;
 
-            std::unique_lock lock(_mutex);
-
             size_t hash_val = hash(key);
             auto& bucket = _storage[hash_val];
+            // Get this bucket's lock
+            std::unique_lock lock(bucket._lock);
 
             bucket.l.push_back(std::make_pair(key, value));
 
@@ -139,9 +145,9 @@ class HashTable {
          */
         std::optional<V> get(const K& key) const {
             size_t hash_val = hash(key);
-            std::shared_lock lock(_mutex);
-
             auto& bucket = _storage[hash_val];
+            // Get this bucket's lock
+            std::shared_lock lock(bucket._lock);
 
             if(bucket.l.size() == 0)
                 return std::nullopt;
@@ -164,25 +170,22 @@ class HashTable {
          */
         std::optional<V> remove(const K& key) {
             size_t hash_val = hash(key);
-
-            std::unique_lock lock(_mutex);
-
             auto& bucket = _storage[hash_val];
+            // Get this bucket's lock
+            std::unique_lock lock(bucket._lock);
 
             auto const result = std::find_if(bucket.l.begin(), bucket.l.end(),
                     [&key](const std::pair<K, V>& elem) { return elem.first == key; } );
 
             if(result != bucket.l.end()) {
-                //std::cout << "found key " << key << std::endl;
                 --_size;
                 //auto ret = std::make_optional(std::move((*result).second));
                 auto ret = std::make_optional((*result).second);
                 bucket.l.erase(result);
                 if(_resizable)
-                    resize(false);
+                    resize(true);
                 return ret;
             } else {
-                //std::cout << "did not find key " << key << std::endl;
                 return std::nullopt;
             }
             return std::make_optional((*result).second);
@@ -193,8 +196,8 @@ class HashTable {
          */
         std::vector<K> getKeys() const {
             std::vector<K> vec = std::vector<K>();
-            //std::vector<K> vec{_capacity};
 
+            // Get the global lock
             std::shared_lock lock(_mutex);
 
             for(size_t i = 0; i < _capacity; ++i) {
@@ -213,8 +216,8 @@ class HashTable {
          */
         std::vector<V> getValues() const {
             std::vector<V> vec = std::vector<V>();
-            //std::vector<V> vec{_capacity};
 
+            // Get the global lock
             std::shared_lock lock(_mutex);
 
             for(size_t i = 0; i < _capacity; ++i) {
@@ -268,11 +271,13 @@ class HashTable {
          * of the Proxy struct.
          * Note that no resizing of the HashTable happens when using the subscript operator
          * in combination with an assignment.
+         * Also note that the subscript operator currently is not thread safe TODO ?
          */
         Proxy operator[](const K key) {
-            std::unique_lock lock(_mutex);
             size_t hash_val = hash(key);
             auto& bucket = _storage[hash_val];
+            // Get this bucket's lock
+            std::unique_lock lock(bucket._lock);
 
             auto const result = std::find_if(bucket.l.begin(), bucket.l.end(),
                     [&key](const std::pair<K, V>& elem) { return elem.first == key; } );
@@ -282,9 +287,10 @@ class HashTable {
         }
 
         V& operator[](const K key) const {
-            std::shared_lock lock(_mutex);
             size_t hash_val = hash(key);
             auto& bucket = _storage[hash_val];
+            // Get this bucket's lock
+            std::shared_lock lock(bucket._lock);
 
             auto const result = std::find_if(bucket.l.begin(), bucket.l.end(),
                     [&key](const std::pair<K, V>& elem) { return elem.first == key; } );
@@ -314,21 +320,21 @@ class HashTable {
         * The internal list's node/bucket type
         */
         struct Node {
-            // TODO
-            int lock = 0;
+            // Each bucket manages a RW-lock
+            mutable std::shared_mutex _lock;
 
             std::list<std::pair<K, V>> l = std::list<std::pair<K, V>>();
         };
-        
-        size_t _size;
+
+        // _size must be atomic since many threads may write to it
+        // at the same time
+        std::atomic<size_t> _size;
         size_t _capacity;
         const bool _resizable;
         std::unique_ptr<Node[]> _storage;
         mutable std::shared_mutex _mutex;
-        mutable std::mutex _gmutex;
 
         size_t hash(const K key) const {
-            //std::shared_lock lock(_mutex);
             std::hash<K> hash_fn;
             size_t hash_val = hash_fn(key) % _capacity;
 
@@ -367,7 +373,10 @@ class HashTable {
          * threads to pause when they return from their operations
          * via a condition variable or similar.
          * Each worker thread should check this CV during each pass
-         * of their main loop
+         * of their main loop - but that would require an external
+         * request to the HashTable to resize instead of
+         * being able to dynamically resize itself.
+         * Another solution should be preferred.
          */
         inline void resize(bool shrink=false) {
             //std::lock_guard<std::mutex> lock(_gmutex);
@@ -390,9 +399,9 @@ class HashTable {
                 _capacity = _capacity * GROWTH_FACTOR;
                 _size = 0;
 
-                for(size_t i = 0; i < _capacity; ++i) {
-                    _storage[i] = Node();
-                }
+                //for(size_t i = 0; i < _capacity; ++i) {
+                //    _storage[i] = Node();
+                //}
                 for(auto& elem : old_elems) {
                     //insert(elem.first, std::move(elem.second)); 
                     insert_unsafe(elem.first, std::move(elem.second));
@@ -410,9 +419,9 @@ class HashTable {
                 //_capacity = (_capacity / SHRINK_FACTOR) + 1;
                 _capacity = (_capacity + (SHRINK_FACTOR - 1)) / SHRINK_FACTOR;
                 _size = 0;
-                for(size_t i = 0; i < _capacity; ++i) {
-                    _storage[i] = Node();
-                }
+                //for(size_t i = 0; i < _capacity; ++i) {
+                //    _storage[i] = Node();
+                //}
                 for(auto& elem : old_elems) {
                     //insert(elem.first, std::move(elem.second)); 
                     insert_unsafe(elem.first, std::move(elem.second));
@@ -422,6 +431,7 @@ class HashTable {
         }
 
         // Used when resizing
+        // Every bucket must be locked
         void insert_unsafe(K key, V value) {
             size_t hash_val = hash(key);
             auto& bucket = _storage[hash_val];

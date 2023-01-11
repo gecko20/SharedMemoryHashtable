@@ -69,7 +69,6 @@ std::string uint8_to_string(const uint8_t* v, const size_t len) {
 std::ostream& operator<<(std::ostream& output, const Message& other) {
     //output << "Message ";
     switch(other.mode) {
-    //switch(other.mode.load()) {
         case Message::GET:
             output << "(GET)";
             break;
@@ -103,7 +102,6 @@ std::ostream& operator<<(std::ostream& output, const Message& other) {
 }
 
 void receiveMsg(Mailbox<slots>* mailbox) {
-    //while(thread_running.load(std::memory_order_relaxed)) {
     while(true) {
         // TODO: Prevent a deadlock if the client does not exist anymore?
 
@@ -245,7 +243,10 @@ int main(int argc, char* argv[]) {
 
     if(argc != 2) {
         std::cerr << "Wrong number of arguments! Expecting exactly \
-            one integer argument (size of the HashTable)." << std::endl;
+            one integer argument (size of the HashTable). \
+            If 0 is provided, the HashTable dynamically grows \
+            and shrinks (which is currently only working \
+            with a single client)." << std::endl;
         return EXIT_FAILURE;
     }
 
@@ -260,11 +261,15 @@ int main(int argc, char* argv[]) {
     }
 
     // Our HashTable which is managed by the server
-    table = std::make_unique<HashTable<std::string, std::string>>(tableSize, false);
+    if(tableSize == 0) {
+        table = std::make_unique<HashTable<std::string, std::string>>();
+    } else {
+        table = std::make_unique<HashTable<std::string, std::string>>(tableSize, false);
+    }
 
-    table->insert("test", "hallo");
-    (*table)["test"] = "test";
-    (*table)["test"] = "hallo";
+    //table->insert("test", "hallo");
+    //(*table)["test"] = "test";
+    //(*table)["test"] = "hallo";
 
     //for(size_t i = 100001; i <= 300000; ++i) {
     //    auto tmp = std::to_string(i);
@@ -329,8 +334,6 @@ int main(int argc, char* argv[]) {
 
     for(size_t i = 0; i < slots; ++i) {
         threads[i] = std::thread{receiveMsg, mailbox_ptr};
-        //std::thread t{respond, mailbox, idx, msg};
-        //t.detach();
     }
 
     //std::cout << thread_running.is_lock_free() << std::endl;
@@ -349,13 +352,13 @@ int main(int argc, char* argv[]) {
         }
         std::cout << "---------------" << std::endl;
         std::cout << "HashTable:" << std::endl;
-        //table->print_table();
         std::cout << "Size: " << table->size() << "; Capacity: " << table->capacity() << "; Load Factor: " << table->load_factor() << std::endl;
         std::cout << "---------------" << std::endl;
-        //std::this_thread::sleep_for(2s);
         
         // Periodically notify waiting threads since they somehow
         // seem to sometimes wait on the same condition variable
+        // TODO: Not needed anymore, notifications are being broadcast to
+        // all clients and server threads
         //for(size_t i = 0; i < slots; ++i) {
         //    //if((errno = pthread_cond_signal(&(mailbox_ptr->rcvs[i]))) != 0) {
         //    if((errno = pthread_cond_broadcast(&(mailbox_ptr->rcvs[i]))) != 0) {

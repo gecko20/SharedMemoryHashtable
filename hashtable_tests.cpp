@@ -18,7 +18,7 @@
 //}
 
 TEST_CASE("adding new elements to HashTable") {
-    HashTable<std::string, int> table{5, false};
+    HashTable<std::string, int> table{5, true};
 
     REQUIRE(table.size() == 0);
     REQUIRE(table.capacity() >= 5);
@@ -88,7 +88,7 @@ TEST_CASE("adding new elements to HashTable") {
 }
 
 TEST_CASE("removing elements from the HashTable") {
-    HashTable<int, int> table{10, false};
+    HashTable<int, int> table{10, true};
     
     for(size_t i = 0; i < 3; ++i) {
         if(i != 2)
@@ -127,9 +127,10 @@ TEST_CASE("removing elements from the HashTable") {
 TEST_CASE("stress tests") {
     const size_t slots = 12;
     //HashTable<int, int> table{10, false};
-    HashTable<int, int> table{slots * 100000, false};
+    HashTable<int, int> table{slots * 1000000, false};
 
     SUBCASE("parallel access with different keys/values for each thread") {
+        std::cout << "Running stress tests: Parallel access with different keys/values" << std::endl;
         std::array<std::thread, slots> threads{};
 
         auto f = [&table](int x) { 
@@ -138,7 +139,7 @@ TEST_CASE("stress tests") {
             std::optional<int> getRes;
             //std::optional<int> getRes;
             //$((1 + 100000*$i)) $(( 100000 + 100000*$i)))
-            for(int i = 1 + 100000 * x; i <= 100000 + 100000*x; ++i) {
+            for(int i = 1 + 1000000 * x; i <= 1000000 + 1000000*x; ++i) {
                 getRes = table.get(i);
                 REQUIRE(getRes.has_value() == false);
                 insRes = table.insert(i, i);
@@ -169,15 +170,14 @@ TEST_CASE("stress tests") {
     }
 
     SUBCASE("parallel access with same keys/values for each thread") {
+        std::cout << "Running stress tests: Parallel access with same keys/values" << std::endl;
         std::array<std::thread, slots> threads{};
 
         auto f = [&table]() { 
             bool               insRes;
             std::optional<int> remRes;
             std::optional<int> getRes;
-            //std::optional<int> getRes;
-            //$((1 + 100000*$i)) $(( 100000 + 100000*$i)))
-            for(int i = 1; i <= 100000; ++i) {
+            for(int i = 1; i <= 1000000; ++i) {
                 getRes = table.get(i);
                 insRes = table.insert(i, i);
                 getRes = table[i];
@@ -198,6 +198,53 @@ TEST_CASE("stress tests") {
         REQUIRE(table.size() == 0);
 
     }
+}
+
+TEST_CASE("parallel insertions via the subscript operator") {
+    std::cout << "Running stress tests: Parallel access via the subscript operator" << std::endl;
+    const size_t slots = 12;
+    //HashTable<int, int> table{10, false};
+    HashTable<int, int> table{slots * 1000000, false};
+    std::array<std::thread, slots> threads{};
+
+    auto f = [&table](int x) {
+        bool               insRes;
+        std::optional<int> remRes;
+        std::optional<int> getRes;
+        
+        for(int i = 0; i <= 1000; ++i) {
+            std::optional<int> remRes;
+            std::optional<int> getRes;
+            for(int i = 1 + 1000 * x; i <= 1000 + 1000*x; ++i) {
+                getRes = table.get(i);
+                REQUIRE(getRes.has_value() == false);
+                table[i] = i;
+                getRes = table.get(i);
+                REQUIRE(getRes.has_value() == true);
+                CHECK(*getRes == i);
+                table[i] = i + 1;
+                getRes = table.get(i);
+                REQUIRE(getRes.has_value() == true);
+                CHECK(*getRes == i + 1);
+                remRes = table.remove(i);
+                getRes = table.get(i);
+                REQUIRE(getRes.has_value() == false);
+
+                CHECK(remRes.has_value() == true);
+            }
+        }
+    };
+        
+    for(size_t i = 0; i < slots; ++i) {
+        threads[i] = std::thread{f, i};
+    }
+
+    for(auto& t : threads) {
+        t.join();
+    }
+
+    table.print_table();
+    REQUIRE(table.size() == 0);
 }
 
 TEST_CASE("Add elements to the CircularBuffer") {

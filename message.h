@@ -17,7 +17,7 @@
 #define MAX_LENGTH_VAL 1024
 
 //constexpr const size_t slots = 10;
-constexpr const size_t slots = 12;
+constexpr const size_t slots = 8;
 
 
 /**
