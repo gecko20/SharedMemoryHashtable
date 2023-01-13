@@ -174,12 +174,13 @@ TEST_CASE("stress tests") {
         std::array<std::thread, slots> threads{};
 
         auto f = [&table]() { 
-            bool               insRes;
+            //bool               insRes;
             std::optional<int> remRes;
             std::optional<int> getRes;
             for(int i = 1; i <= 1000000; ++i) {
                 getRes = table.get(i);
-                insRes = table.insert(i, i);
+                //insRes = table.insert(i, i);
+                table.insert(i, i);
                 getRes = table[i];
                 remRes = table.remove(i);
                 getRes = table.get(i);
@@ -200,6 +201,7 @@ TEST_CASE("stress tests") {
     }
 }
 
+// For some reason, these tests fail with -O0, but succeed with -O1 or -O2
 TEST_CASE("parallel insertions via the subscript operator") {
     std::cout << "Running stress tests: Parallel access via the subscript operator" << std::endl;
     const size_t slots = 12;
@@ -208,30 +210,26 @@ TEST_CASE("parallel insertions via the subscript operator") {
     std::array<std::thread, slots> threads{};
 
     auto f = [&table](int x) {
-        bool               insRes;
+        //bool               insRes;
         std::optional<int> remRes;
         std::optional<int> getRes;
         
-        for(int i = 0; i <= 1000; ++i) {
-            std::optional<int> remRes;
-            std::optional<int> getRes;
-            for(int i = 1 + 1000 * x; i <= 1000 + 1000*x; ++i) {
-                getRes = table.get(i);
-                REQUIRE(getRes.has_value() == false);
-                table[i] = i;
-                getRes = table.get(i);
-                REQUIRE(getRes.has_value() == true);
-                CHECK(*getRes == i);
-                table[i] = i + 1;
-                getRes = table.get(i);
-                REQUIRE(getRes.has_value() == true);
-                CHECK(*getRes == i + 1);
-                remRes = table.remove(i);
-                getRes = table.get(i);
-                REQUIRE(getRes.has_value() == false);
+        for(int i = 1 + 1000000 * x; i <= 1000000 + 1000000*x; ++i) {
+            getRes = table.get(i);
+            REQUIRE(getRes.has_value() == false);
+            table[i] = i;
+            getRes = table.get(i);
+            REQUIRE(getRes.has_value() == true);
+            CHECK(*getRes == i);
+            table[i] = i + 1;
+            getRes = table.get(i);
+            REQUIRE(getRes.has_value() == true);
+            CHECK(*getRes == i + 1);
+            remRes = table.remove(i);
+            getRes = table.get(i);
+            REQUIRE(getRes.has_value() == false);
 
-                CHECK(remRes.has_value() == true);
-            }
+            CHECK(remRes.has_value() == true);
         }
     };
         

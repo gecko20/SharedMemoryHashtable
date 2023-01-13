@@ -53,28 +53,31 @@ std::string uint8_to_string(const uint8_t* v, const size_t len) {
 }
 
 Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const char* key, const char* value) {
-//Message sendMsg(Mailbox* mailbox, const enum Message::mode_t mode, const char* key, const char* value) {
     Message msg{};
     msg.client_id.store(client_id);
 
     // Prepare the message
     switch(mode) {
         case Message::GET:
-            msg.mode = Message::GET;
+            msg.mode = mode;
             memcpy(msg.key.data(), key, strlen(key) + 1);
             break;
         case Message::INSERT:
-            msg.mode = Message::INSERT;
+            msg.mode = mode;
             memcpy(msg.key.data(), key, strlen(key) + 1);
             memcpy(msg.data.data(), value, strlen(value) + 1);
             break;
         case Message::READ_BUCKET:
-            msg.mode = Message::READ_BUCKET;
+            msg.mode = mode;
             // Key is interpreted as the bucket's index in this case
             memcpy(msg.key.data(), key, strlen(key) + 1);
             break;
+        case Message::CLOSE_SHM:
+            msg.mode = mode;
+            memcpy(msg.key.data(), key, strlen(key) + 1);
+            break;
         case Message::DELETE:
-            msg.mode = Message::DELETE;
+            msg.mode = mode;
             memcpy(msg.key.data(), key, strlen(key) + 1);
             break;
         case Message::EXIT:
@@ -86,7 +89,6 @@ Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const 
     }
     // Send the message
     size_t idx = static_cast<size_t>(-1);
-    //idx = static_cast<size_t>(mailbox->msgs.push_back(std::move(msg)));
     idx = static_cast<size_t>(mailbox->msgs.push_back(msg));
     while(idx == static_cast<size_t>(-1)) {
         // push_back failed due to the Message buffer being full, wait and try again
@@ -96,10 +98,13 @@ Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const 
         idx = static_cast<size_t>(mailbox->msgs.push_back(msg));
     }
 
-    // Wait for a response
     Message ret{};
-    //return ret;
+    // If mode is CLOSE_SHM or EXIT we don't have to wait for a reponse
+    if(mode == Message::CLOSE_SHM || mode == Message::EXIT) {
+        return ret;
+    }
 
+    // Wait for a response
     mailbox->mutexes[idx].lock();
     // ready must be true here, wait for that condition
     // AND: pid must be equal to the client's pid, so it knows
@@ -119,11 +124,9 @@ Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const 
     // which wants to reuse the slot for another response
     // Also reset the response's PID to 0 so the server knows it is allowed to
     // reuse the slot
-    //mailbox->responses[idx].success.store(false);
-    //mailbox->responses[idx].success = false;
     mailbox->responses[idx].ready.clear();
     mailbox->responses[idx].client_id.store(0);
-    // Notify the server
+    // Notify the server's thread(s)
     //if((errno = pthread_cond_signal(&(mailbox->rcvs[idx]))) != 0) {
     if((errno = pthread_cond_broadcast(&(mailbox->rcvs[idx]))) != 0) {
         std::perror("client.cpp: pthread_cond_signal()");
@@ -142,7 +145,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     
     // The name associated with the shared memory object
     const char* name = "/shm_ipc";
-    //int shm_fd = shm_open(name, O_CREAT | O_RDWR, 0666);
     int shm_fd = shm_open(name, O_RDWR, 0666);
     
     if(shm_fd == -1) {
@@ -150,18 +152,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
         return EXIT_FAILURE;
     }
     
-    //const size_t slots = 10; // Number of message slots, defined in message.h
-    //const size_t page_size = static_cast<size_t>(getpagesize());
-    //const size_t mmap_size = sizeof(MMap) + sizeof(Message) * slots;
-    //const size_t num_pages = (mmap_size / page_size) + 1; // + 1 page just to make sure we have enough memory
-
-    // Truncate / Extend the shared memory object to the needed size in multiples of PAGE_SIZE
-    //if(ftruncate(shm_fd, static_cast<off_t>(num_pages * page_size)) != 0) {
-    //    perror("ftruncate() failed");
-    //    shm_unlink(name);
-    //    return EXIT_FAILURE;
-    //}
-
     void* shared_mem_ptr = mmap(NULL,
             sizeof(MMap<slots>) + sizeof(Message) * slots,
             PROT_READ | PROT_WRITE,
@@ -170,7 +160,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
             0);
     if(shared_mem_ptr == MAP_FAILED) {
         perror("mmap() failed");
-        //shm_unlink(name);
         return EXIT_FAILURE;
     }
 
@@ -179,6 +168,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
     Mailbox<slots>* mailbox_ptr = &(shared_mem->mailbox);
 
     std::signal(SIGINT, signal_handler);
+
     Message response;
     // Main loop
     do {
@@ -219,8 +209,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
                 if(input.size() < 2 || input[1].length() > MAX_LENGTH_KEY) {
                     throw std::invalid_argument("READ_BUCKET expects 1 argument (the bucket's number)");
                 }
-                // TODO
-                std::cout << "READ_BUCKET case" << std::endl;
+                response = sendMsg(mailbox_ptr, Message::READ_BUCKET, input[1].c_str());
 
             } else if(input[0] == "delete") {
                 if(input.size() < 2 || input[1].length() > MAX_LENGTH_KEY) {
@@ -242,7 +231,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
         if(input[0] == "get") {
                 std::cout << "GET " << input[1];
                 if(response.success) {
-                //if(response.success.load()) {
                     std::cout << " -> " << uint8_to_string(response.data.data(), response.data.size()) << " succeeded";
                 } else {
                     std::cout << " failed";
@@ -251,7 +239,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
         } else if(input[0] == "insert") {
                 std::cout << "INSERT " << input[1] << " -> " << input[2];
                 if(response.success) {
-                //if(response.success.load()) {
                     std::cout << " succeeded";
                 } else {
                     std::cout << " failed";
@@ -260,14 +247,76 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
         } else if(input[0] == "delete") {
                 std::cout << "DELETE " << input[1];
                 if(response.success) {
-                //if(response.success.load()) {
                     std::cout << " -> " << uint8_to_string(response.data.data(), response.data.size()) << " succeeded";
                 } else {
                     std::cout << " failed";
                 }
                 std::cout << std::endl;
         } else if(input[0] == "read_bucket") {
-                // TODO
+            if(response.success) {
+                // 1. Establish a new shared memory segment, given the name
+                //    provided in response.key with length response.data
+                // 2. Copy the vector<std::string, std::string> located there
+                //    in the memory of the client
+                // 3. Close the memory segment
+                // 4. Send the server a message which notifies it to remove
+                //    the shared memory segment
+                // The name associated with the shared memory object
+                std::string shm_name = uint8_to_string(response.key.data(), response.key.size());
+                std::cout << shm_name << std::endl;
+                std::string shm_length_str = uint8_to_string(response.data.data(), response.data.size());
+                size_t shm_length{0};
+                try {
+                    shm_length = std::stoul(shm_length_str);
+                } catch(std::exception const& e) {
+                    std::cerr << "client.cpp: read_bucket(): " << e.what() << std::endl;
+                    std::exit(-1);
+                }
+                int shm_fd = shm_open(shm_name.c_str(), O_RDONLY, 0666);
+                    
+                if(shm_fd == -1) {
+                    perror("client.cpp: read_bucket(): shm_open() failed");
+                    return EXIT_FAILURE;
+                }
+
+                void* shm_ptr = mmap(NULL,
+                                     shm_length,
+                                     PROT_READ,
+                                     MAP_SHARED,
+                                     shm_fd,
+                                     0);
+                if(shm_ptr == MAP_FAILED) {
+                    perror("client.cpp: read_bucket(): mmap() failed");
+                    std::exit(-1);
+                }
+                auto shm = reinterpret_cast<std::pair<std::array<uint8_t, MAX_LENGTH_KEY>, std::array<uint8_t, MAX_LENGTH_VAL>>*>(shm_ptr);
+                // Copy the vector
+                std::vector<std::pair<std::array<uint8_t, MAX_LENGTH_KEY>, std::array<uint8_t, MAX_LENGTH_VAL>>> vec;
+                auto ptr = shm;
+                // TODO For the love of God, I need to change this
+                // If this doesn't work, encode the number of elements
+                // in the shared memory segment's name
+                while(*((uint64_t*)ptr) != 0) {
+                    vec.push_back(*ptr);
+                    ++ptr;
+                }
+
+                // Now, send another message notifying the server that we are done
+                // reading the bucket
+                sendMsg(mailbox_ptr, Message::CLOSE_SHM, shm_name.c_str());
+
+                // Finally output the response
+                std::cout << "READ_BUCKET " << input[1] << " successful:" << std::endl;
+                for(auto& [k, v] : vec) {
+                    std::cout << uint8_to_string(k.data(), k.size()) << " -> " \
+                              << uint8_to_string(v.data(), v.size()) << std::endl;
+                }
+            } else {
+                // read_bucket() failed
+                std::cout << "read_bucket() failed" << std::endl;
+                std::cout << uint8_to_string(response.key.data(), response.key.size()) << std::endl;
+            }
+
         } else {
             // default
         }

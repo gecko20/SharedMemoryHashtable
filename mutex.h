@@ -49,9 +49,11 @@ class CountingSemaphore {
     private:
         pthread_mutex_t _mutex;
 #ifdef __APPLE__
-        //std::condition_variable _cond;
+        // Since macOS does not implement POSIX semaphores,
+        // we need to implement those ourselves, (ironically)
+        // using POSIX CVs and atomics
         pthread_cond_t _cond;
-        //size_t _count;
+        // TODO: use POSIX atomic?
         std::atomic<size_t> _count;
 #else
         sem_t           _sem;

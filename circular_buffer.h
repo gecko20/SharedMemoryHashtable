@@ -28,13 +28,12 @@ class timeout_exception : public std::exception {
  * A simple circular buffer / fixed size queue
  * The number of available slots is defined by the template parameter N.
  *
- * TODO: Timeouts with try_acquire_for and exception handling in server/client?
+ * TODO: Timeouts so that locked threads can return if a client dies?
  */
 
 template <typename T, size_t N = 10>
 class CircularBuffer {
     public: 
-        //CircularBuffer<T, N>() : _buffer(std::array<T, N> {}), _capacity(N), _pmutex(), _openSlots(N), _fullSlots(0) {
         CircularBuffer() : _buffer(std::array<T, N> {}), _capacity(N), _pmutex(), _openSlots(N), _fullSlots(0) {
 
         }
@@ -44,35 +43,11 @@ class CircularBuffer {
          * //Reading and writing via the subscript operator is not threadsafe per se.
          */
         T& operator[](const size_t idx) {
-            //std::lock_guard<std::mutex> lock(_mutex);
-            //_fullSlots.acquire();
             _pmutex.lock();
-            //auto& ret;
-            //auto& ret = _buffer.at(idx);
-            //try {
-            //    T& ret = _buffer.at(idx);
-            //    _pmutex.unlock();
-            //    _openSlots.release();
-            //    return ret;
-            //} catch(std::out_of_range& e) {
-            //    //std::cerr << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
-            //    //std::cout << e.what() << " caught in CircularBuffer::operator[] with idx = " << idx << std::endl;
-            //    throw e;
-            //    _pmutex.unlock();
-            //    _openSlots.release();
-            //}
-            //T& ret = _buffer.at(idx);
             T& ret = _buffer[idx];
             _pmutex.unlock();
-            //_openSlots.release();
             return ret;
-            //_mutex.unlock();
-            //_pmutex.unlock();
-            //return ret;
         }
-        //T* getPtr(const size_t idx) {
-        //    return &(_buffer.data()[idx]);
-        //}
 
         /**
          * Updates the given slot by overwriting it with the provided element.
@@ -139,15 +114,12 @@ class CircularBuffer {
                     std::cout << "idx = " << idx << std::endl;
                     std::exit(-1);
                 }
-                // Empty slot TODO: Needed? Slows down the program a lot
-                //_buffer[_headIdx] = T{};
 
                 _headIdx = (_headIdx + 1) % _capacity;
                 //_mutex.unlock();
                 //unsigned int fullVal = _fullSlots.current_value();
                 //unsigned int openVal = _openSlots.current_value();
                 //std::cout << "fullVal: " << fullVal << "; openVal: " << openVal << std::endl;
-
 
                 _pmutex.unlock();
             }
@@ -218,10 +190,6 @@ class CircularBuffer {
             return ret;
             //return _buffer.at(idx);
         }
-        //T* at(size_t idx) {
-        //    return &(_buffer[idx]);
-        //}
-
 
         inline bool isEmpty() const {
             //std::lock_guard<std::mutex> lock(_mutex);
@@ -303,5 +271,4 @@ class CircularBuffer {
         //std::counting_semaphore<N> _fullSlots;
         CountingSemaphore _openSlots;
         CountingSemaphore _fullSlots;
-        //mutable std::shared_mutex _rwlock;
 };

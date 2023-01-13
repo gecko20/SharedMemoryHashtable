@@ -16,7 +16,6 @@
 #define MAX_LENGTH_KEY 128
 #define MAX_LENGTH_VAL 1024
 
-//constexpr const size_t slots = 10;
 constexpr const size_t slots = 8;
 
 
@@ -36,29 +35,25 @@ typedef struct Message {
         GET,
         INSERT,
         READ_BUCKET,
+        CLOSE_SHM, // Signals the server to close a shared memory segment opened by READ_BUCKET
         DELETE,
         RESPONSE,
         EXIT // Signals the reading thread to exit and is pushed by the server when a SIGINT occurs
     }; //mode;
 
     mode_t mode;
-    //std::atomic<bool> success;
     bool success;
-    //bool success;
     std::atomic_flag ready;
     std::atomic<pid_t> client_id;
-    //std::atomic<bool> ready;
     std::array<uint8_t, MAX_LENGTH_KEY> key;
     std::array<uint8_t, MAX_LENGTH_VAL> data;
 
-    //Message() = default;
     Message() : mode(Message::DEFAULT),
                 success(false),
                 ready(false),
                 client_id(0),
                 key({}),
                 data({}) {
-        //std::atomic_init(&read, false);
     }
 
     Message(mode_t m) : mode(m),
@@ -69,10 +64,6 @@ typedef struct Message {
                         data({}) { }
 
     Message(Message& other) : mode(other.mode),
-                                        //mode(other.mode.load()),
-                                        //read(other.read.load()),
-                                        //success(false),
-                                        //success(other.success.load()),
                                         success(other.success),
                                         ready(other.ready.test()),
                                         client_id(other.client_id.load()),
@@ -80,10 +71,6 @@ typedef struct Message {
                                         data(other.data) { }
 
     Message(Message&& other) : mode(std::move(other.mode)),
-                                         //mode(other.mode.load()),
-                                         //read(other.read.load(std::memory_order_seq_cst)),
-                                         //success(false),
-                                         //success(other.success.load()),
                                          success(other.success),
                                          ready(other.ready.test()),
                                          client_id(other.client_id.load()),
@@ -93,9 +80,6 @@ typedef struct Message {
     Message& operator=(const Message& other) {
         mode = other.mode;
         success = other.success;
-        //success.store(other.success.load());
-        //success = other.success;
-        //ready.store(other.ready.load());
         if(other.ready.test()) {
             ready.test_and_set();
         } else {
@@ -109,9 +93,6 @@ typedef struct Message {
     Message& operator=(Message&& other) {
         mode = std::move(other.mode);
         success = std::move(other.success);
-        //success.store(other.success.load());
-        //success = other.success;
-        //ready.store(other.ready.load());
         if(other.ready.test()) {
             ready.test_and_set();
         } else {
@@ -125,10 +106,8 @@ typedef struct Message {
 } Message;
 
 template <size_t slots = 10>
-//typedef struct Mailbox {
 struct Mailbox {
     Mailbox() : msgs(CircularBuffer<Message, slots>{}), responses() {
-        //responses.fill(Message(Message::RESPONSE));
         for(size_t i = 0; i < slots; ++i) {
             responses[i] = Message(Message::RESPONSE);
 
@@ -157,16 +136,6 @@ struct Mailbox {
         }
     };
 
-    //Mailbox& operator=(const Mailbox& other) {
-    //    msgs = other.msgs;
-    //    return *this;
-    //}
-
-    //Mailbox& operator=(Mailbox&& other) {
-    //    msgs = std::move(other.msgs);
-    //    return *this;
-    //}
-
     // Stores all requests by clients
     CircularBuffer<Message, slots> msgs;
 
@@ -179,7 +148,6 @@ struct Mailbox {
     std::array<pthread_cond_t, slots> rcvs;
 }; // Mailbox;
 
-//typedef struct MMap {
 template <size_t msg_slots = 10>
 struct MMap {
     MMap() : mailbox(Mailbox<msg_slots>()) {}
@@ -196,24 +164,4 @@ struct MMap {
 
     Mailbox<msg_slots> mailbox;
 }; // MMap;
-
-// TODO
-void printMessage(const Message& msg) {
-    switch(msg.mode) {
-        case Message::GET:
-
-            break;
-        case Message::INSERT:
-
-            break;
-        case Message::DELETE:
-
-            break;
-        case Message::READ_BUCKET:
-
-            break;
-        default:
-            break;
-    }
-}
 

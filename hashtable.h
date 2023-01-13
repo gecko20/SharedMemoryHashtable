@@ -79,8 +79,6 @@ class HashTable {
          * Initializes a HashTable with default space for 1024 elements
          * which is also resizable.
          */
-        //HashTable() : _size(0), _capacity(1024), _resizable(true), _mutex(), _gmutex() {
-        //HashTable() : _size(0), _capacity(1024), _resizable(true), _mutex() {
         HashTable() : _size(0),
                       _capacity(1024),
                       _resizable(true),
@@ -115,9 +113,9 @@ class HashTable {
          */
         bool insert(K key, V value) {
             // TODO: Add if constexpr and some template argument controlling
-            // this part
-            // Uncomment if you want the HashTable to allow additional
-            // elements to be added to it if its "capacity" limit is reached.
+            // whether we want to allow additional elements to be added to
+            // the HashTable even if its "capacity" limit has already been
+            // reached
             //if(_size == _capacity)
             //    return false;
             if(get(key))
@@ -130,7 +128,11 @@ class HashTable {
 
             bucket.l.push_back(std::make_pair(key, value));
 
-            ++_size;
+            ++_size; // TODO: increment relaxed (weil kein sequentieller Zusammenhang mit anderen atomics) fetch-add(1)
+                     // LF too big?
+                     // yes: readlock table weg, write-lock bucket weg
+                     //      writelock table holen, schauen ob noch gebraucht
+                     //      resize
             if(_resizable)
                 resize(false);
 
@@ -192,7 +194,28 @@ class HashTable {
         }
 
         /**
+         * Returns a vector of key/value pairs containing the content of the specified bucket.
+         *
+         * @param i The bucket's index / hash value
+         * @returns A vector of key/value pairs containing the content of the specified bucket
+         */
+        std::vector<std::pair<K, V>> getBucket(size_t i) const {
+            std::vector<std::pair<K, V>> vec{};
+
+            auto& bucket = _storage[i];
+            // Get the bucket's lock
+            std::shared_lock lock(bucket._lock);
+
+            for(auto& elem : bucket.l) {
+                vec.push_back(elem);
+            } 
+
+            return vec;
+        }
+
+        /**
          * Returns a vector containing all keys present in the HashTable.
+         * TODO: Check locks?
          */
         std::vector<K> getKeys() const {
             std::vector<K> vec = std::vector<K>();
@@ -202,6 +225,7 @@ class HashTable {
 
             for(size_t i = 0; i < _capacity; ++i) {
                 //std::cout << "Bucket " << i << " size: " << _storage[i].l.size() << std::endl;
+                std::shared_lock llock(_storage[i]._lock);
                 if(!_storage[i].l.empty()) {
                     for(auto& elem : _storage[i].l) {
                         vec.push_back(elem.first);
@@ -213,6 +237,7 @@ class HashTable {
         
         /**
          * Returns a vector containing all values present in the HashTable.
+         * TODO: Check locks?
          */
         std::vector<V> getValues() const {
             std::vector<V> vec = std::vector<V>();
@@ -221,6 +246,7 @@ class HashTable {
             std::shared_lock lock(_mutex);
 
             for(size_t i = 0; i < _capacity; ++i) {
+                std::shared_lock llock(_storage[i]._lock);
                 if(!_storage[i].l.empty()) {
                     for(auto& elem : _storage[i].l) {
                         vec.push_back(elem.second);
@@ -271,7 +297,6 @@ class HashTable {
          * of the Proxy struct.
          * Note that no resizing of the HashTable happens when using the subscript operator
          * in combination with an assignment.
-         * Also note that the subscript operator currently is not thread safe TODO ?
          */
         Proxy operator[](const K key) {
             size_t hash_val = hash(key);
@@ -282,7 +307,6 @@ class HashTable {
             auto const result = std::find_if(bucket.l.begin(), bucket.l.end(),
                     [&key](const std::pair<K, V>& elem) { return elem.first == key; } );
 
-            //return Proxy(*this, &key, &((*result).second));
             return Proxy{*this, &key, &((*result).second)};
         }
 
@@ -290,12 +314,12 @@ class HashTable {
             size_t hash_val = hash(key);
             auto& bucket = _storage[hash_val];
             // Get this bucket's lock
-            std::shared_lock lock(bucket._lock);
+            //std::shared_lock lock(bucket._lock);
+            std::unique_lock lock(bucket._lock);
 
             auto const result = std::find_if(bucket.l.begin(), bucket.l.end(),
                     [&key](const std::pair<K, V>& elem) { return elem.first == key; } );
 
-            //return V(Proxy(*this, &key, &((*result).second)));
             return V{Proxy{*this, &key, &((*result).second)}};
         }
         
@@ -368,15 +392,6 @@ class HashTable {
          *
          * Thus, as of now, _resizable should always be set to false.
          *
-         * Idea: The main thread could periodically check whether the
-         * table should be resized. If so, it could notify all worker
-         * threads to pause when they return from their operations
-         * via a condition variable or similar.
-         * Each worker thread should check this CV during each pass
-         * of their main loop - but that would require an external
-         * request to the HashTable to resize instead of
-         * being able to dynamically resize itself.
-         * Another solution should be preferred.
          */
         inline void resize(bool shrink=false) {
             //std::lock_guard<std::mutex> lock(_gmutex);

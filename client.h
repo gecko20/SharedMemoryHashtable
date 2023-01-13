@@ -15,5 +15,4 @@
  * @returns a new Message containing the server's response
  */
 Message sendMsg(Mailbox<slots>* mailbox, const enum Message::mode_t mode, const char* key, const char* value = NULL);
-//Message sendMsg(Mailbox* mailbox, const enum Message::mode_t mode, const char* key, const char* value = NULL);
 

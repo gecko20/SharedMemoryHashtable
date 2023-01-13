@@ -108,9 +108,6 @@ void CountingSemaphore::wait() {
     // Wait for _count > 0
     //while(!_count) {
     while(_count.load() <= 0) {
-        // For some reason, pthread_cond_wait leads to an 'Operation timed out'
-        // error on macOS, so we will use pthread_cond_timedwait and set the timeout
-        // to some large value
         if((errno = pthread_cond_wait(&_cond, &_mutex)) != 0) {
             std::perror("CountingSemaphore::wait(): pthread_cond_wait()");
             std::exit(-1);
