@@ -4,8 +4,8 @@ The hashtable supports all kinds of data types as keys as long as they are `hash
 
 The project also provides two example applications:
 
-*) A server which manages a (statically sized) hashtable in its own process space and which is opening up a shared memory segment for IPC with clients via a circular buffer
-*) A client which connects to the same shared memory segment opened up by the server. It reads input from `stdin`, sends requests to the server and prints out the responses.
+* A server which manages a (statically sized) hashtable in its own process space and which is opening up a shared memory segment for IPC with clients via a circular buffer
+* A client which connects to the same shared memory segment opened up by the server. It reads input from `stdin`, sends requests to the server and prints out the responses.
 
 Both example applications handle key/value pairs of C-style strings. The server is able to handle multiple clients at once.
 
