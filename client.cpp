@@ -13,10 +13,8 @@
 #include <sys/shm.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
-//#include <sys/types.h>
 #include "client.h"
 #include "message.h"
-//#include "hashtable.h"
 
 #include <chrono>
 #include <thread>
@@ -182,6 +180,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
         while(ss >> param) {
             input.push_back(param);
         }
+        // Exit the program if no input was given
         if(input.size() == 0)
             break;
             //continue;
@@ -296,6 +295,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
                 // TODO For the love of God, I need to change this
                 // If this doesn't work, encode the number of elements
                 // in the shared memory segment's name
+                // NOTE: Also, this would only work in 64-bit platforms,
+                //       so it should be changed to some ptr_t
                 while(*((uint64_t*)ptr) != 0) {
                     vec.push_back(*ptr);
                     ++ptr;

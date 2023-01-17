@@ -90,6 +90,7 @@ class HashTable {
          * Initializes a HashTable with space for the given amount of elements.
          *
          * @param cap number of elements the HashTable should have space for after initialization
+         * @param resizable decides whether the HashTable should dynamically resize itself or keep a static amount of buckets
          */
         HashTable(size_t cap, bool resizable = false) : _size(0),
                                                         _capacity(cap),
@@ -128,11 +129,8 @@ class HashTable {
 
             bucket.l.push_back(std::make_pair(key, value));
 
-            ++_size; // TODO: increment relaxed (weil kein sequentieller Zusammenhang mit anderen atomics) fetch-add(1)
-                     // LF too big?
-                     // yes: readlock table weg, write-lock bucket weg
-                     //      writelock table holen, schauen ob noch gebraucht
-                     //      resize
+            ++_size; 
+                     
             if(_resizable)
                 resize(false);
 
@@ -181,7 +179,6 @@ class HashTable {
 
             if(result != bucket.l.end()) {
                 --_size;
-                //auto ret = std::make_optional(std::move((*result).second));
                 auto ret = std::make_optional((*result).second);
                 bucket.l.erase(result);
                 if(_resizable)
@@ -216,6 +213,8 @@ class HashTable {
         /**
          * Returns a vector containing all keys present in the HashTable.
          * TODO: Check locks?
+         *
+         * @returns an std::vector<K> containing the keys in all buckets
          */
         std::vector<K> getKeys() const {
             std::vector<K> vec = std::vector<K>();
@@ -238,6 +237,8 @@ class HashTable {
         /**
          * Returns a vector containing all values present in the HashTable.
          * TODO: Check locks?
+         *
+         * @returns an std::vector<V> containing the values in all buckets
          */
         std::vector<V> getValues() const {
             std::vector<V> vec = std::vector<V>();
@@ -258,6 +259,8 @@ class HashTable {
 
         /**
          * Returns the current size/number of elements of the HashTable.
+         *
+         * @returns the current amount of key/value pairs in the HashTable as size_t
          */
         size_t size() const {
             //std::shared_lock lock(_mutex);
@@ -266,6 +269,8 @@ class HashTable {
 
         /**
          * Returns the current capacity of the HashTable.
+         *
+         * @returns the current amount of buckets in the HashTable as size_t
          */
         size_t capacity() const {
             //std::shared_lock lock(_mutex);
@@ -274,6 +279,8 @@ class HashTable {
 
         /**
          * Returns whether the HashTable is set to be resizable.
+         *
+         * @returns whether the HashTable is set to be resizable as bool
          */
         bool isResizable() const {
             return _resizable;
@@ -283,6 +290,8 @@ class HashTable {
          * Returns the current load factor of the HashTable.
          * The load factor is calculated as n / k, n being the number of entries occupied
          * in the HashTable, k being the number of buckets.
+         *
+         * @returns the current Load Factor of the HashTable as double
          */
         double load_factor() const {
             //std::shared_lock lock(_mutex);
@@ -322,7 +331,10 @@ class HashTable {
 
             return V{Proxy{*this, &key, &((*result).second)}};
         }
-        
+
+        /**
+         * Prints out the current key/value pairs in all buckets to stdout
+         */
 
         void print_table() const {
             // TODO
@@ -390,12 +402,16 @@ class HashTable {
          * some remnants dangling around and sometimes returning
          * wrong values in get(), insert() and remove().
          *
-         * Thus, as of now, _resizable should always be set to false.
+         * Thus, as of now, _resizable should always be set to false if
+         * there are concurrent accesses to the HashTable
          *
          */
         inline void resize(bool shrink=false) {
-            //std::lock_guard<std::mutex> lock(_gmutex);
-
+            // TODO: increment _size relaxed (weil kein sequentieller Zusammenhang mit anderen atomics) fetch-add(1)
+            // LF too big?
+            // yes: readlock table weg, write-lock bucket weg
+            //      writelock table holen, schauen ob noch gebraucht
+            //      resize
             auto lf = load_factor();
 
             if(!shrink && lf >= ALPHA_MAX) {

@@ -8,14 +8,6 @@
 
 #include <optional>
 
-//int factorial(int number) { return number <= 1 ? number : factorial(number - 1) * number; }
-//
-//TEST_CASE("testing the factorial") {
-//    CHECK(factorial(1) == 1);
-//    CHECK(factorial(2) == 2);
-//    CHECK(factorial(3) == 6);
-//    CHECK(factorial(10) == 3628800);
-//}
 
 TEST_CASE("adding new elements to HashTable") {
     HashTable<std::string, int> table{5, true};
@@ -38,7 +30,7 @@ TEST_CASE("adding new elements to HashTable") {
         REQUIRE(table.size() == 1);
         REQUIRE(table.capacity() >= 5);
         auto elem = table.get("3");
-        REQUIRE(elem.has_value() == true); // why does has_value() return false in this case??
+        REQUIRE(elem.has_value() == true);
         CHECK(*elem == 1336);
 
         table["4"] = 4;
@@ -58,7 +50,6 @@ TEST_CASE("adding new elements to HashTable") {
     SUBCASE("adding many elements such that the HashTable needs to be resized.") {
         for(size_t i = 0; i < 5; ++i) {
             table.insert(std::to_string(i), static_cast<int>(i));
-            //table.insert(i, static_cast<int>(i));
         }
 
         REQUIRE(table.size() == 5);

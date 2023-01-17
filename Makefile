@@ -9,7 +9,6 @@ BUILD := build
 TEST := test
 
 
-#all: hashtable.o mutex.o circular_buffer.o server client test
 all: server client test
 
 hashtable.o: hashtable.cpp hashtable.h
