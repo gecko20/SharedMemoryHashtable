@@ -4,7 +4,7 @@ The hashtable supports all kinds of data types as keys as long as they are `hash
 
 The project also provides two example applications:
 
-* A server which manages a (statically sized) hashtable in its own process space and which is opening up a shared memory segment for IPC with clients via a circular buffer
+* A server which manages a (statically or dynamically sized in terms of buckets) hashtable in its own process space and which is opening up a shared memory segment for IPC with clients via a circular buffer
 * A client which connects to the same shared memory segment opened up by the server. It reads input from `stdin`, sends requests to the server and prints out the responses.
 
 Both example applications handle key/value pairs of C-style strings. The server is able to handle multiple clients at once.
@@ -19,5 +19,5 @@ On Linux systems, the programs run just fine.
 
 `make run` spawns a server as well as a client which enqueues requests to the server such as "INSERT key value", "DELETE key", "GET key" or "READ_BUCKET idx".
 
-`run_many.sh` can be run after firing up a server in a terminal (which takes one integer argument deciding how many buckets the hashtable has) and spawns a couple of clients spamming the server with thousands of requests. After they are done, the hashtable should, again, be empty.
+`run_many.sh` can be run after firing up a server in a terminal (which takes one integer argument deciding how many buckets the hashtable has - if 0 is supplied, the hashtable grows and shrinks dynamically) and spawns a couple of clients spamming the server with thousands of requests. After they are done, the hashtable should, again, be empty.
 
