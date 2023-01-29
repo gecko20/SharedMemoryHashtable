@@ -6,7 +6,6 @@
 
 #include <cstdlib>
 
-//#include <mutex>
 #include <optional>
 #include <semaphore>
 #include <shared_mutex>
@@ -61,9 +60,8 @@ class CircularBuffer {
         }
 
         /**
-         * @returns a pointer to the element at the current head without modifying it as well as its index.
+         * @returns an std::optional possibly containing an std::pair<T, size_t> consisting of the content of the current slot at _headIdx as well as the _headIdx itself
          */
-        //std::optional<std::pair<const T*, size_t>> peek() const {
         std::optional<std::pair<T, size_t>> peek() {
             if(isEmpty())
                 return std::nullopt;

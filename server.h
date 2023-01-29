@@ -17,6 +17,8 @@ union uint8_to_uint64 {
 /**
  * Polls the server's mailbox for a new message and spawns
  * a new thread which handles the associated request.
+ *
+ * @param mailbox a pointer to the Mailbox object in shared memory
  */
 void receiveMsg(Mailbox<slots>* mailbox);
 
@@ -25,6 +27,7 @@ void receiveMsg(Mailbox<slots>* mailbox);
  * The Message will be written to the same slot the original
  * request was stored in.
  *
+ * @param mailbox a pointer to the Mailbox object in shared memory
  * @param idx the slot's index in the underlying CircularBuffer
  * @param msg the response in the format of a struct Message
  */

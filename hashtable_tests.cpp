@@ -46,7 +46,6 @@ TEST_CASE("adding new elements to the HashTable") {
     SUBCASE("adding many elements such that the HashTable needs to be resized.") {
         for(size_t i = 0; i < 5; ++i) {
             table.insert(std::to_string(i), static_cast<int>(i));
-            //table.insert(i, static_cast<int>(i));
         }
 
         REQUIRE(table.size() == 5);

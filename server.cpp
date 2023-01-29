@@ -13,7 +13,6 @@
 #include <numeric>
 
 #include <atomic>
-//#include <condition_variable>
 #include <algorithm>
 #include <array>
 #include <iostream>
@@ -108,6 +107,7 @@ std::ostream& operator<<(std::ostream& output, const Message& other) {
 void receiveMsg(Mailbox<slots>* mailbox) {
     while(true) {
         // TODO: Prevent a deadlock if the client does not exist anymore?
+        //       This could be done via cond_wait() with timeouts
 
         auto elem = mailbox->msgs.pop();
         if(elem) {
@@ -340,7 +340,7 @@ int main(int argc, char* argv[]) {
         std::exit(-1);
     }
 
-    // Our HashTable which is managed by the server
+    // Initialize our HashTable which is managed by the server
     if(tableSize == 0) {
         table = std::make_unique<HashTable<std::string, std::string>>();
     } else {
