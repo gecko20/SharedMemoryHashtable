@@ -94,7 +94,7 @@ class CircularBuffer {
                 return std::nullopt;
 
             //_fullSlots.acquire();
-            _nWait_full++;
+            //_nWait_full++;
             _fullSlots.wait();
             //if(!_fullSlots.try_acquire_for(2s))
             //    throw timeout_exception();
@@ -124,7 +124,7 @@ class CircularBuffer {
                 _pmutex.unlock();
             }
             //_openSlots.release();
-            _nPost_open++;
+            //_nPost_open++;
             _openSlots.post();
 
             return std::make_optional<std::pair<T, size_t>>(std::make_pair(elem, idx));
@@ -141,7 +141,7 @@ class CircularBuffer {
                 return -1;
 
             //_openSlots.acquire();
-            _nWait_open++;
+            //_nWait_open++;
             _openSlots.wait();
             //_openSlots.try_acquire_for(2s);
             //if(!_fullSlots.try_acquire_for(2s))
@@ -168,7 +168,7 @@ class CircularBuffer {
                 _pmutex.unlock();
             }
             //_fullSlots.release();
-            _nPost_full++;
+            //_nPost_full++;
             _fullSlots.post();
 
             return ret;
@@ -220,7 +220,7 @@ class CircularBuffer {
             size_t ret = _capacity;
             _pmutex.unlock();
             return ret;
-            return _capacity;
+            //return _capacity;
         }
 
         size_t size() const {
@@ -253,10 +253,10 @@ class CircularBuffer {
         }
 
     private:
-        std::atomic<size_t> _nWait_open{0};
-        std::atomic<size_t> _nPost_open{0};
-        std::atomic<size_t> _nWait_full{0};
-        std::atomic<size_t> _nPost_full{0};
+        //std::atomic<size_t> _nWait_open{0};
+        //std::atomic<size_t> _nPost_open{0};
+        //std::atomic<size_t> _nWait_full{0};
+        //std::atomic<size_t> _nPost_full{0};
         std::array<T, N> _buffer;
 
         size_t _headIdx{0};
