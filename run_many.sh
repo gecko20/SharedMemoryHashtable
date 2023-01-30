@@ -7,7 +7,7 @@ do
         echo "get $num"
         echo "insert $num $num"
         echo "get $num"
-        # echo "delete $num"
+        echo "delete $num"
         echo "get $num"
     done < <(seq $((1 + 100000*$i)) $(( 100000 + 100000*$i))) | ./build/client | tee ./logs/$i.log | sed -e "s/^/[Client$i] /" &
 done

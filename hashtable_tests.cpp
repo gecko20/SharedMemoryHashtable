@@ -61,8 +61,6 @@ TEST_CASE("adding new elements to the HashTable") {
         elem = table.get("10");
         REQUIRE(elem.has_value() == false);
         CHECK(elem.has_value() == false);
-
-        // TODO: Check whether all elements are still present
     }
     SUBCASE("make sure no duplicates in the HashTable are allowed via insert()") {
         table.insert("2", 2);

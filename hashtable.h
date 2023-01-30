@@ -33,7 +33,7 @@ concept Hashable = requires(T a) {
 /**
  * A hashtable storing key-value pairs supporting concurrent operations.
  * Hash collisions are resolved by chaining via linked lists for each bucket in the table.
- * Synchronization of concurrt operations is done via reader/writer locks, i.e. std::shared_mutex.
+ * Synchronization of concurrent operations is done via reader/writer locks, i.e. std::shared_mutex.
  */ 
 template <typename K, typename V> requires Hashable<K> && std::equality_comparable<K> && std::copy_constructible<V>
 class HashTable {
@@ -43,26 +43,21 @@ class HashTable {
     struct Proxy {
         private:
             HashTable<K, V>& table;
-            const size_t hash_val;
             const K key;
             const V element;
 
         public:
             // Constructor
-            Proxy(HashTable<K, V>& table, const size_t hash_val, const K key, const V element) : table(table), hash_val(hash_val), key(key), element(element) { }
+            Proxy(HashTable<K, V>& table, const K key, const V element) : table(table), key(key), element(element) { }
 
             // Assignment via subscript in class HashTable
             void operator=(V rhs) {
                 auto entry = table.get(key);
                 if(entry) {
-                    //std::unique_lock lock(table._storage[hash_val]._lock);
-                    //*element = rhs;
                     table.remove(key);
                     table.insert(key, rhs);
                 } else {
                     table.insert(key, rhs);
-                    //table.insert(*key, rhs);
-                    //table.insert_unsafe(*key, rhs);
                 }
             }
 
@@ -74,9 +69,6 @@ class HashTable {
             // Return the wrapped value
             operator V() const { return element; };
             operator V() { return element; };
-            //operator V() const { return *element; };
-            //operator V() { return *element; };
-
         };
    
     public:
@@ -152,9 +144,6 @@ class HashTable {
             bucket.l.push_back(std::make_pair(key, value));
 
             ++_size; 
-                     
-            if(_resizable)
-                resize(false);
 
             return true;
         }
@@ -200,7 +189,6 @@ class HashTable {
             if(_resizable) {
                 while(needsResize(-1)) {
                     glock.unlock();
-                    //grow(1);
                     resize(-1);
                     glock.lock();
                 }
@@ -373,8 +361,6 @@ class HashTable {
          * Returns a reference to the value the provided key is mapped to.
          * If an assignment happens, the assignment is proxied to the assignment operator
          * of the Proxy struct.
-         * Note that no resizing of the HashTable happens when using the subscript operator
-         * in combination with an assignment.
          */
         Proxy operator[](const K key) {
             // Get the table's global lock in read mode
@@ -388,9 +374,7 @@ class HashTable {
             auto const result = std::find_if(bucket.l.begin(), bucket.l.end(),
                     [&key](const std::pair<K, V>& elem) { return elem.first == key; } );
 
-            //return Proxy{*this, &key, &((*result).second)};
-            //return Proxy{*this, hash_val, &key, &((*result).second)};
-            return Proxy{*this, hash_val, key, ((*result).second)};
+            return Proxy{*this, key, ((*result).second)};
         }
 
         V& operator[](const K key) const {
@@ -406,7 +390,7 @@ class HashTable {
             auto const result = std::find_if(bucket.l.begin(), bucket.l.end(),
                     [&key](const std::pair<K, V>& elem) { return elem.first == key; } );
 
-            return V{Proxy{*this, hash_val, key, ((*result).second)}};
+            return V{Proxy{*this, key, ((*result).second)}};
         }
 
         /**
@@ -442,7 +426,6 @@ class HashTable {
         // _size must be atomic since many threads may write to it
         // at the same time
         std::atomic<size_t> _size;
-        //size_t _capacity;
         std::atomic<size_t> _capacity;
         const bool _resizable;
         std::unique_ptr<Node[]> _storage;
@@ -461,7 +444,7 @@ class HashTable {
             std::list<std::pair<K, V>> l = std::list<std::pair<K, V>>();
 
             for(size_t i = 0; i < _capacity; ++i) {
-                    l.splice(l.begin(), _storage[i].l);
+                l.splice(l.begin(), _storage[i].l);
             }
 
             return l;
@@ -496,8 +479,6 @@ class HashTable {
                     break;
                     }
                 case 2: {
-                    //if(!shrink)
-                    //    break;
                     // Shrink the HashTable
                     //std::cout << "lf " << load_factor(-1) << " <= " << /*(ALPHA_MAX/4)*/ 0.10 << ", shrinking..." << std::endl;
                     
@@ -510,7 +491,6 @@ class HashTable {
                     _size = 0;
 
                     for(auto& elem : old_elems) {
-                        //insert(elem.first, std::move(elem.second)); 
                         insert_unsafe(elem.first, std::move(elem.second));
                     }
                     break;
@@ -524,8 +504,8 @@ class HashTable {
             return;
         }
 
-        // Used when resizing or in subscript operations
-        // Does not acquire the global lock nor the bucket's lock
+        // Used when resizing.
+        // Does not acquire the global lock nor the bucket's lock.
         void insert_unsafe(K key, V value) {
             size_t hash_val = hash(key);
             auto& bucket = _storage[hash_val];
